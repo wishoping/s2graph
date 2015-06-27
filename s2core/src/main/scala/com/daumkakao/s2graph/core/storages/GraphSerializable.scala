@@ -237,6 +237,81 @@ object GraphStorable {
 
   }
 
+  object IndexedEdgeLikeV3 extends Serializable[EdgeWithIndex, Seq[KeyValue]] {
+
+
+    val version = InnerVal.VERSION2
+
+    def encode(edgeWithIndex: EdgeWithIndex): Seq[KeyValue] = {
+      val id = VertexId.toSourceVertexId(edgeWithIndex.srcVertex.id)
+      /** rowKey */
+      val rowKey = Bytes.add(id.bytes,
+        edgeWithIndex.labelWithDir.bytes,
+        labelOrderSeqWithIsInverted(edgeWithIndex.labelIndexSeq,
+          edgeWithIndex.isInverted))
+
+      val tgtVertexIdBytes = VertexId.toTargetVertexId(edgeWithIndex.tgtVertex.id).bytes
+      val idxPropsMap = edgeWithIndex.orders.toMap
+      val idxPropsBytes = propsToBytes(edgeWithIndex.orders)
+
+      val qualifier = idxPropsMap.get(LabelMeta.toSeq) match {
+        case None => Bytes.add(idxPropsBytes, tgtVertexIdBytes)
+        case Some(vId) => idxPropsBytes
+      }
+      val compositeRowKey = Bytes.add(rowKey, qualifier)
+      assert(!edgeWithIndex.metas.isEmpty)
+      val kvs = for {
+        (k, v) <- edgeWithIndex.metas
+      } yield {
+          val qualifier = Bytes.toBytes(k)
+          val value = v.bytes
+          new KeyValue(compositeRowKey, edgeCf, qualifier, edgeWithIndex.ts, value)
+        }
+      kvs.toSeq
+    }
+
+    def decode(kvs: Seq[KeyValue]): EdgeWithIndex = {
+      /** row Key */
+      assert(!kvs.isEmpty)
+
+      val kv = kvs.head
+      val keyBytes = kv.key()
+      var pos = 0
+      val srcVertexId = SourceVertexId.fromBytes(keyBytes, pos, keyBytes.length, version)
+      pos += srcVertexId.bytes.length
+      val labelWithDir = LabelWithDirection(Bytes.toInt(keyBytes, pos, 4))
+      pos += 4
+      val (labelOrderSeq, isInverted) = bytesToLabelIndexSeqWithIsInverted(keyBytes, pos)
+      pos += 1
+
+      val (idxProps, tgtVertexId) = {
+        val (decodedProps, endAt) = bytesToProps(keyBytes, pos, version)
+        val decodedVId =
+          if (endAt == keyBytes.length) {
+            val innerValOpt = decodedProps.toMap.get(LabelMeta.toSeq)
+            assert(innerValOpt.isDefined)
+            TargetVertexId(VertexId.DEFAULT_COL_ID, innerValOpt.get)
+          } else {
+            TargetVertexId.fromBytes(keyBytes, endAt, keyBytes.length, version)
+          }
+        (decodedProps, decodedVId)
+      }
+      val op = GraphUtil.operations("insert")
+      val props = for {
+        kv <- kvs
+      } yield {
+        assert(kv.qualifier().length == 1)
+        val propKey = kv.qualifier().head
+        val propVal = InnerVal.fromBytes(kv.value(), 0, kv.value().length, version)
+        (propKey -> propVal)
+      }
+      EdgeWithIndex(Vertex(srcVertexId), Vertex(tgtVertexId), labelWithDir, op, kv.timestamp(),
+        labelOrderSeq, props.toMap)
+    }
+
+  }
+
+
   object SnapshotEdgeLikeV1 extends Serializable[EdgeWithIndexInverted, KeyValue] {
     val version = InnerVal.VERSION1
     val isInverted = true
@@ -282,6 +357,7 @@ object GraphStorable {
         labelWithDir, op, kv.timestamp(), props.toMap)
     }
   }
+
   object SnapshotEdgeLikeV2 extends Serializable[EdgeWithIndexInverted, KeyValue] {
     val version = InnerVal.VERSION2
     val isInverted = true
