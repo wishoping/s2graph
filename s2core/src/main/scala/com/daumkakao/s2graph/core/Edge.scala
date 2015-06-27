@@ -26,6 +26,7 @@ case class EdgeWithIndexInverted(srcVertex: Vertex,
   import Edge._
 
   //  Logger.error(s"EdgeWithIndexInverted${this.toString}")
+  lazy val isInverted = true
   lazy val lastModifiedAt = if (props.isEmpty) 0L else props.map(_._2.ts).max
   lazy val schemaVer = label.schemaVersion
   lazy val rowKey = EdgeRowKey(VertexId.toSourceVertexId(srcVertex.id),
@@ -54,6 +55,13 @@ case class EdgeWithIndexInverted(srcVertex: Vertex,
     ret
   }
 
+  def toEdge = {
+    val ts = props.get(LabelMeta.timeStampSeq).map { v =>
+      BigDecimal(v.innerVal.toString).toLong
+    }.getOrElse(version)
+    Edge(srcVertex, tgtVertex, labelWithDir, op, ts, version, props)
+  }
+
 }
 
 case class EdgeWithIndex(srcVertex: Vertex,
@@ -71,6 +79,7 @@ case class EdgeWithIndex(srcVertex: Vertex,
   import GraphConstant._
   import Edge._
 
+  lazy val isInverted = false
   lazy val label = Label.findById(labelWithDir.labelId)
   lazy val schemaVer = label.schemaVersion
   lazy val labelIndex = LabelIndex.findByLabelIdAndSeq(labelWithDir.labelId, labelIndexSeq).get
@@ -79,6 +88,8 @@ case class EdgeWithIndex(srcVertex: Vertex,
     meta.seq -> innerVal
   }).toMap
   lazy val labelIndexMetaSeqs = labelIndex.metaSeqs
+  lazy val propsWithTs = props.map { case (k, v) => k -> InnerValLikeWithTs(v, ts)}
+
 
   /** TODO: make sure call of this class fill props as this assumes */
   lazy val orders = for (k <- labelIndexMetaSeqs) yield {
@@ -183,6 +194,9 @@ case class EdgeWithIndex(srcVertex: Vertex,
     }
   }
 
+  def toEdge = {
+    Edge(srcVertex, tgtVertex, labelWithDir, op, ts, ts, propsWithTs.toMap)
+  }
 }
 
 /**
