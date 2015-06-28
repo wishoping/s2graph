@@ -116,6 +116,7 @@ object GraphStorable extends JSONParser {
       ret
     }
   }
+
   def defaultLabelPropsWithTs(label: Label, propsWithTs: Map[Byte, InnerValLikeWithTs]) = {
     val labelMetas = LabelMeta.findAllByLabelId(label.id.get)
     val propsWithDefault = (for (meta <- labelMetas) yield {
@@ -128,6 +129,7 @@ object GraphStorable extends JSONParser {
     }).toMap
     propsWithDefault
   }
+
   def filterEdge(edge: Edge, queryParam: QueryParam) = {
     val defaults = defaultLabelPropsWithTs(edge.label, edge.propsWithTs)
     val matches =
@@ -138,6 +140,7 @@ object GraphStorable extends JSONParser {
 
     matches.size == queryParam.hasFilters.size && queryParam.where.map(_.filter(edge)).getOrElse(true)
   }
+
   def toSnapshotEdge(kv: KeyValue, queryParam: QueryParam): Option[Edge] = {
     val edge: Edge = queryParam.label.schemaVersion match {
       case InnerVal.VERSION2 => GraphStorable.SnapshotEdgeLikeV2.decode(kv).toEdge
@@ -146,6 +149,7 @@ object GraphStorable extends JSONParser {
     if (!filterEdge(edge, queryParam)) None
     else Option(edge)
   }
+
   def toIndexedEdge(kv: KeyValue, queryParam: QueryParam): Option[Edge] = {
     val edge: Edge = queryParam.label.schemaVersion match {
       case InnerVal.VERSION2 => GraphStorable.IndexedEdgeLikeV2.decode(kv).toEdge
@@ -153,6 +157,7 @@ object GraphStorable extends JSONParser {
     }
     Option(edge)
   }
+
   object IndexedEdgeLikeV1 extends Serializable[EdgeWithIndex, KeyValue] {
 
 
@@ -190,24 +195,34 @@ object GraphStorable extends JSONParser {
 
       /** qualifier */
       val qualifierBytes = kv.qualifier()
-      pos = 0
-      val op = qualifierBytes.last
-      val (idxProps, tgtVertexId) = {
-        val (decodedProps, endAt) = bytesToProps(qualifierBytes, pos, version)
-        val decodedVId = TargetVertexId.fromBytes(qualifierBytes, endAt, qualifierBytes.length, version)
-        (decodedProps, decodedVId)
-      }
-      val labelIndexOpt = LabelIndex.findByLabelIdAndSeq(labelWithDir.labelId, labelOrderSeq)
-      assert(labelIndexOpt.isDefined)
-      assert(labelIndexOpt.get.metaSeqs.length == idxProps.length)
-      val idxPropsMerged = labelIndexOpt.get.metaSeqs.zip(idxProps.map(_._2))
-      /** value */
-      val valueBytes = kv.value()
-      pos = 0
-      val (props, endAt) = bytesToKeyValues(valueBytes, pos, 0, version)
+      if (qualifierBytes.isEmpty) {
+        val degree = Bytes.toLong(kv.value)
+        val ts = kv.timestamp
+        val op = GraphUtil.operations("insert")
+        val dummyProps = Map(LabelMeta.degreeSeq -> InnerVal.withLong(degree, version))
+        val tgtVertexId = TargetVertexId(VertexId.DEFAULT_COL_ID, InnerVal.withStr("0", version))
+        EdgeWithIndex(Vertex(srcVertexId), Vertex(tgtVertexId), labelWithDir, op,
+          ts, labelOrderSeq, dummyProps)
+      } else {
+        pos = 0
+        val op = qualifierBytes.last
+        val (idxProps, tgtVertexId) = {
+          val (decodedProps, endAt) = bytesToProps(qualifierBytes, pos, version)
+          val decodedVId = TargetVertexId.fromBytes(qualifierBytes, endAt, qualifierBytes.length, version)
+          (decodedProps, decodedVId)
+        }
+        val labelIndexOpt = LabelIndex.findByLabelIdAndSeq(labelWithDir.labelId, labelOrderSeq)
+        assert(labelIndexOpt.isDefined)
+        assert(labelIndexOpt.get.metaSeqs.length == idxProps.length)
+        val idxPropsMerged = labelIndexOpt.get.metaSeqs.zip(idxProps.map(_._2))
+        /** value */
+        val valueBytes = kv.value()
+        pos = 0
+        val (props, endAt) = bytesToKeyValues(valueBytes, pos, 0, version)
 
-      EdgeWithIndex(Vertex(srcVertexId), Vertex(tgtVertexId), labelWithDir,
-        op, kv.timestamp, labelOrderSeq, (idxPropsMerged ++ props).toMap)
+        EdgeWithIndex(Vertex(srcVertexId), Vertex(tgtVertexId), labelWithDir,
+          op, kv.timestamp, labelOrderSeq, (idxPropsMerged ++ props).toMap)
+      }
     }
 
   }
@@ -253,34 +268,45 @@ object GraphStorable extends JSONParser {
 
       /** qualifier */
       val qualifierBytes = kv.qualifier()
-      pos = 0
-      val op = GraphUtil.defaultOpByte
-      val (idxProps, tgtVertexId) = {
-        val (decodedProps, endAt) = bytesToProps(qualifierBytes, pos, version)
-        val decodedVId =
-          if (endAt == qualifierBytes.length) {
-            val innerValOpt = decodedProps.toMap.get(LabelMeta.toSeq)
-            assert(innerValOpt.isDefined)
-            TargetVertexId(VertexId.DEFAULT_COL_ID, innerValOpt.get)
-          } else {
-            TargetVertexId.fromBytes(qualifierBytes, endAt, qualifierBytes.length, version)
-          }
-        (decodedProps, decodedVId)
+      if (qualifierBytes.isEmpty) {
+        val degree = Bytes.toLong(kv.value)
+        val ts = kv.timestamp
+        val op = GraphUtil.operations("insert")
+        val dummyProps = Map(LabelMeta.degreeSeq -> InnerVal.withLong(degree, version))
+        val tgtVertexId = TargetVertexId(VertexId.DEFAULT_COL_ID, InnerVal.withStr("0", version))
+        EdgeWithIndex(Vertex(srcVertexId), Vertex(tgtVertexId), labelWithDir, op,
+          ts, labelOrderSeq, dummyProps)
+      } else {
+        pos = 0
+        val op = GraphUtil.defaultOpByte
+        val (idxProps, tgtVertexId) = {
+          val (decodedProps, endAt) = bytesToProps(qualifierBytes, pos, version)
+          val decodedVId =
+            if (endAt == qualifierBytes.length) {
+              val innerValOpt = decodedProps.toMap.get(LabelMeta.toSeq)
+              assert(innerValOpt.isDefined)
+              TargetVertexId(VertexId.DEFAULT_COL_ID, innerValOpt.get)
+            } else {
+              TargetVertexId.fromBytes(qualifierBytes, endAt, qualifierBytes.length, version)
+            }
+          (decodedProps, decodedVId)
+        }
+
+        val labelIndexOpt = LabelIndex.findByLabelIdAndSeq(labelWithDir.labelId, labelOrderSeq)
+        assert(labelIndexOpt.isDefined)
+        assert(labelIndexOpt.get.metaSeqs.length == idxProps.length)
+        val idxPropsMerged = labelIndexOpt.get.metaSeqs.zip(idxProps.map(_._2))
+
+        /** value */
+        val valueBytes = kv.value()
+        pos = 0
+        val (props, endAt) = bytesToKeyValues(valueBytes, pos, 0, version)
+
+
+        EdgeWithIndex(Vertex(srcVertexId), Vertex(tgtVertexId), labelWithDir,
+          op, kv.timestamp, labelOrderSeq, (idxPropsMerged ++ props).toMap)
       }
 
-      val labelIndexOpt = LabelIndex.findByLabelIdAndSeq(labelWithDir.labelId, labelOrderSeq)
-      assert(labelIndexOpt.isDefined)
-      assert(labelIndexOpt.get.metaSeqs.length == idxProps.length)
-      val idxPropsMerged = labelIndexOpt.get.metaSeqs.zip(idxProps.map(_._2))
-
-      /** value */
-      val valueBytes = kv.value()
-      pos = 0
-      val (props, endAt) = bytesToKeyValues(valueBytes, pos, 0, version)
-
-
-      EdgeWithIndex(Vertex(srcVertexId), Vertex(tgtVertexId), labelWithDir,
-        op, kv.timestamp, labelOrderSeq, (idxPropsMerged ++ props).toMap)
     }
 
   }
@@ -353,11 +379,11 @@ object GraphStorable extends JSONParser {
       val props = for {
         kv <- kvs
       } yield {
-        assert(kv.qualifier().length == 1)
-        val propKey = kv.qualifier().head
-        val propVal = InnerVal.fromBytes(kv.value(), 0, kv.value().length, version)
-        (propKey -> propVal)
-      }
+          assert(kv.qualifier().length == 1)
+          val propKey = kv.qualifier().head
+          val propVal = InnerVal.fromBytes(kv.value(), 0, kv.value().length, version)
+          (propKey -> propVal)
+        }
       EdgeWithIndex(Vertex(srcVertexId), Vertex(tgtVertexId), labelWithDir, op, kv.timestamp(),
         labelOrderSeq, (idxPropsMerged ++ props).toMap)
     }

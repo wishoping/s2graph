@@ -347,8 +347,8 @@ class IntegritySpec extends Specification {
         val results = jsResult \ "results"
         val propsLs = (results \\ "props").seq
 
-//        val deegrees = (jsResult \ "degrees").as[List[JsObject]]
-//        (deegrees.head \ LabelMeta.degree.name).as[Int] must equalTo(1)
+        val deegrees = (jsResult \ "degrees").as[List[JsObject]]
+        (deegrees.head \ LabelMeta.degree.name).as[Int] must equalTo(1)
 
         val from = (results \\ "from").seq.last.toString.replaceAll("\"", "")
         val to = (results \\ "to").seq.last.toString.replaceAll("\"", "")

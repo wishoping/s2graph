@@ -880,11 +880,11 @@ object Edge extends JSONParser {
   def toEdge(kv: org.hbase.async.KeyValue, param: QueryParam, isSnapshotEdge: Boolean = false): Option[Edge] = {
     Logger.debug(s"$param -> $kv")
     /** degree edge is not considered yet */
-    if (kv.qualifier().isEmpty) None
-    else {
+//    if (kv.qualifier().isEmpty) None
+//    else {
       if (isSnapshotEdge) GraphStorable.toSnapshotEdge(kv, param)
       else GraphStorable.toIndexedEdge(kv, param)
-    }
+//    }
 
   }
 //
