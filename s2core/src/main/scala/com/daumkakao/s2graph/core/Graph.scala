@@ -424,17 +424,18 @@ object Graph {
     val dir = queryParam.labelWithDir.dir
     val invertedEdge = Edge(srcVertex, tgtVertex, queryParam.labelWithDir).toInvertedEdgeHashLike()
 
-    val rowKey = invertedEdge.rowKey
+    val keyValue = invertedEdge.keyValue
+    val rowKey = keyValue.key
 
-    val qualifier = invertedEdge.qualifier
+    val qualifier = keyValue.qualifier
     val client = getClient(label.hbaseZkAddr)
-    val getRequest = new GetRequest(label.hbaseTableName.getBytes(), rowKey.bytes, edgeCf, qualifier.bytes)
+    val getRequest = new GetRequest(label.hbaseTableName.getBytes(), keyValue.key, edgeCf, qualifier)
     Logger.debug(s"$getRequest")
     val qParam = QueryParam(LabelWithDirection(label.id.get, dir.toByte))
     defferedToFuture(client.get(getRequest))(emptyKVs).map { kvs =>
       val edgeWithScoreLs = for {
         kv <- kvs
-        edge <- Edge.toEdge(kv, qParam)
+        edge <- Edge.toEdge(kv, qParam, isSnapshotEdge = true)
       } yield {
           Logger.debug(s"$edge")
           (edge, edge.rank(qParam.rank))

@@ -1,6 +1,6 @@
 package com.daumkakao.s2graph.core.storages
 
-import com.daumkakao.s2graph.core.models.{LabelMeta, LabelIndex}
+import com.daumkakao.s2graph.core.models.{Label, LabelMeta, LabelIndex}
 import com.daumkakao.s2graph.core._
 import com.daumkakao.s2graph.core.types2._
 import org.apache.hadoop.hbase.util.Bytes
@@ -9,7 +9,7 @@ import org.hbase.async.KeyValue
 /**
  * Created by shon on 6/28/15.
  */
-object GraphStorable {
+object GraphStorable extends JSONParser {
 
   import com.daumkakao.s2graph.core.GraphConstant._
 
@@ -115,7 +115,43 @@ object GraphStorable {
       ret
     }
   }
+  def defaultLabelPropsWithTs(label: Label, propsWithTs: Map[Byte, InnerValLikeWithTs]) = {
+    val labelMetas = LabelMeta.findAllByLabelId(label.id.get)
+    val propsWithDefault = (for (meta <- labelMetas) yield {
+      propsWithTs.get(meta.seq) match {
+        case Some(v) => (meta.seq -> v)
+        case None =>
+          val defaultInnerVal = toInnerVal(meta.defaultValue, meta.dataType, label.schemaVersion)
+          (meta.seq -> InnerValLikeWithTs(defaultInnerVal, 0L))
+      }
+    }).toMap
+    propsWithDefault
+  }
+  def filterEdge(edge: Edge, queryParam: QueryParam) = {
+    val defaults = defaultLabelPropsWithTs(edge.label, edge.propsWithTs)
+    val matches =
+      for {
+        (k, v) <- queryParam.hasFilters
+        edgeVal <- defaults.get(k) if edgeVal.innerVal == v
+      } yield (k -> v)
 
+    matches.size == queryParam.hasFilters.size && queryParam.where.map(_.filter(edge)).getOrElse(true)
+  }
+  def toSnapshotEdge(kv: KeyValue, queryParam: QueryParam): Option[Edge] = {
+    val edge: Edge = queryParam.label.schemaVersion match {
+      case InnerVal.VERSION2 => GraphStorable.SnapshotEdgeLikeV2.decode(kv).toEdge
+      case InnerVal.VERSION1 => GraphStorable.SnapshotEdgeLikeV1.decode(kv).toEdge
+    }
+    if (!filterEdge(edge, queryParam)) None
+    else Option(edge)
+  }
+  def toIndexedEdge(kv: KeyValue, queryParam: QueryParam): Option[Edge] = {
+    val edge: Edge = queryParam.label.schemaVersion match {
+      case InnerVal.VERSION2 => GraphStorable.IndexedEdgeLikeV2.decode(kv).toEdge
+      case InnerVal.VERSION1 => GraphStorable.IndexedEdgeLikeV2.decode(kv).toEdge
+    }
+    Option(edge)
+  }
   object IndexedEdgeLikeV1 extends Serializable[EdgeWithIndex, KeyValue] {
 
 
