@@ -5,6 +5,7 @@ import com.daumkakao.s2graph.core._
 import com.daumkakao.s2graph.core.types2._
 import org.apache.hadoop.hbase.util.Bytes
 import org.hbase.async.KeyValue
+import play.api.Logger
 
 /**
  * Created by shon on 6/28/15.
@@ -148,7 +149,7 @@ object GraphStorable extends JSONParser {
   def toIndexedEdge(kv: KeyValue, queryParam: QueryParam): Option[Edge] = {
     val edge: Edge = queryParam.label.schemaVersion match {
       case InnerVal.VERSION2 => GraphStorable.IndexedEdgeLikeV2.decode(kv).toEdge
-      case InnerVal.VERSION1 => GraphStorable.IndexedEdgeLikeV2.decode(kv).toEdge
+      case InnerVal.VERSION1 => GraphStorable.IndexedEdgeLikeV1.decode(kv).toEdge
     }
     Option(edge)
   }
@@ -196,13 +197,17 @@ object GraphStorable extends JSONParser {
         val decodedVId = TargetVertexId.fromBytes(qualifierBytes, endAt, qualifierBytes.length, version)
         (decodedProps, decodedVId)
       }
+      val labelIndexOpt = LabelIndex.findByLabelIdAndSeq(labelWithDir.labelId, labelOrderSeq)
+      assert(labelIndexOpt.isDefined)
+      assert(labelIndexOpt.get.metaSeqs.length == idxProps.length)
+      val idxPropsMerged = labelIndexOpt.get.metaSeqs.zip(idxProps.map(_._2))
       /** value */
       val valueBytes = kv.value()
       pos = 0
       val (props, endAt) = bytesToKeyValues(valueBytes, pos, 0, version)
 
       EdgeWithIndex(Vertex(srcVertexId), Vertex(tgtVertexId), labelWithDir,
-        op, kv.timestamp, labelOrderSeq, (idxProps ++ props).toMap)
+        op, kv.timestamp, labelOrderSeq, (idxPropsMerged ++ props).toMap)
     }
 
   }
@@ -262,13 +267,20 @@ object GraphStorable extends JSONParser {
           }
         (decodedProps, decodedVId)
       }
+
+      val labelIndexOpt = LabelIndex.findByLabelIdAndSeq(labelWithDir.labelId, labelOrderSeq)
+      assert(labelIndexOpt.isDefined)
+      assert(labelIndexOpt.get.metaSeqs.length == idxProps.length)
+      val idxPropsMerged = labelIndexOpt.get.metaSeqs.zip(idxProps.map(_._2))
+
       /** value */
       val valueBytes = kv.value()
       pos = 0
       val (props, endAt) = bytesToKeyValues(valueBytes, pos, 0, version)
 
+
       EdgeWithIndex(Vertex(srcVertexId), Vertex(tgtVertexId), labelWithDir,
-        op, kv.timestamp, labelOrderSeq, (idxProps ++ props).toMap)
+        op, kv.timestamp, labelOrderSeq, (idxPropsMerged ++ props).toMap)
     }
 
   }
@@ -332,6 +344,11 @@ object GraphStorable extends JSONParser {
           }
         (decodedProps, decodedVId)
       }
+      val labelIndexOpt = LabelIndex.findByLabelIdAndSeq(labelWithDir.labelId, labelOrderSeq)
+      assert(labelIndexOpt.isDefined)
+      assert(labelIndexOpt.get.metaSeqs.length == idxProps.length)
+      val idxPropsMerged = labelIndexOpt.get.metaSeqs.zip(idxProps.map(_._2))
+
       val op = GraphUtil.operations("insert")
       val props = for {
         kv <- kvs
@@ -342,7 +359,7 @@ object GraphStorable extends JSONParser {
         (propKey -> propVal)
       }
       EdgeWithIndex(Vertex(srcVertexId), Vertex(tgtVertexId), labelWithDir, op, kv.timestamp(),
-        labelOrderSeq, props.toMap)
+        labelOrderSeq, (idxPropsMerged ++ props).toMap)
     }
 
   }

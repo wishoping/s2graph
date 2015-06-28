@@ -33,7 +33,7 @@ object InnerVal extends HBaseDeserializable {
         val blobVar = OrderedBytes.decodeBlobVar(pbr)
         new InnerVal(blobVar)
       } else {
-        throw new RuntimeException("!!")
+        throw new RuntimeException("failed to decode InnerVal.!!")
       }
     }
   }
