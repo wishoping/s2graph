@@ -353,8 +353,8 @@ class IntegritySpec extends Specification {
 
   def runTC(tcNum: Int, tcString: String, opWithProps: List[(Long, String, String)], expected: Map[String, String]) = {
     for {
-      labelName <- List(testLabelName, testLabelName2, testLabelNameV1)
-//      labelName <- List(testLabelNameV3)
+//      labelName <- List(testLabelName, testLabelName2, testLabelNameV1)
+      labelName <- List(testLabelNameV3)
       i <- (1 to NUM_OF_EACH_TEST)
     } {
       val srcId = ((tcNum * 1000) + i).toString
@@ -488,16 +488,16 @@ class IntegritySpec extends Specification {
         //        runTC(tcNum, tcString, bulkQueries, expected)
 
 
-//        tcNum = 7
-//        tcString = "[t1 -> t2 -> t3 test case] insert(t1) delete(t2) insert(t3) test "
-//        bulkQueries = List(
-//          (t1, "insert", "{\"time\": 10}"),
-//          (t2, "delete", ""),
-//          (t3, "insert", "{\"time\": 10, \"weight\": 20}"))
-//        expected = Map("time" -> "10", "weight" -> "20")
-//
-//        runTC(tcNum, tcString, bulkQueries, expected)
-//
+        tcNum = 7
+        tcString = "[t1 -> t2 -> t3 test case] insert(t1) delete(t2) insert(t3) test "
+        bulkQueries = List(
+          (t1, "insert", "{\"time\": 10}"),
+          (t2, "delete", ""),
+          (t3, "insert", "{\"time\": 10, \"weight\": 20}"))
+        expected = Map("time" -> "10", "weight" -> "20")
+
+        runTC(tcNum, tcString, bulkQueries, expected)
+
 //        tcNum = 8
 //        tcString = "[t1 -> t2 -> t3 test case] insert(t1) delete(t2) insert(t3) test "
 //        bulkQueries = List(
@@ -621,38 +621,38 @@ class IntegritySpec extends Specification {
       }
     }
   }
-  "vetex tc" should {
-    "tc1" in {
-      running(FakeApplication()) {
-        val ids = (0 until 3).toList
-        val (serviceName, columnName) = (testServiceName, testColumnName)
-
-        val data = vertexInsertsPayload(serviceName, columnName, ids)
-        val payload = Json.parse(Json.toJson(data).toString)
-
-        val req = FakeRequest(POST, s"/graphs/vertices/insert/$serviceName/$columnName").withBody(payload)
-        println(s">> $req, $payload")
-        val res = Await.result(route(req).get, HTTP_REQ_WAITING_TIME)
-        println(res)
-        res.header.status must equalTo(200)
-        Thread.sleep(asyncFlushInterval)
-        println("---------------")
-
-        val query = vertexQueryJson(serviceName, columnName, ids)
-        val retFuture = route(FakeRequest(POST, "/graphs/getVertices").withJsonBody(query)).get
-
-        val ret = contentAsJson(retFuture)
-        println(">>>", ret)
-        val fetched = ret.as[Seq[JsValue]]
-        for {
-          (d, f) <- data.zip(fetched)
-        } yield {
-          (d \ "id") must beEqualTo((f \ "id"))
-          ((d \ "props") \ "age") must beEqualTo(((f \ "props") \ "age"))
-        }
-      }
-      true
-    }
-  }
+//  "vetex tc" should {
+//    "tc1" in {
+//      running(FakeApplication()) {
+//        val ids = (0 until 3).toList
+//        val (serviceName, columnName) = (testServiceName, testColumnName)
+//
+//        val data = vertexInsertsPayload(serviceName, columnName, ids)
+//        val payload = Json.parse(Json.toJson(data).toString)
+//
+//        val req = FakeRequest(POST, s"/graphs/vertices/insert/$serviceName/$columnName").withBody(payload)
+//        println(s">> $req, $payload")
+//        val res = Await.result(route(req).get, HTTP_REQ_WAITING_TIME)
+//        println(res)
+//        res.header.status must equalTo(200)
+//        Thread.sleep(asyncFlushInterval)
+//        println("---------------")
+//
+//        val query = vertexQueryJson(serviceName, columnName, ids)
+//        val retFuture = route(FakeRequest(POST, "/graphs/getVertices").withJsonBody(query)).get
+//
+//        val ret = contentAsJson(retFuture)
+//        println(">>>", ret)
+//        val fetched = ret.as[Seq[JsValue]]
+//        for {
+//          (d, f) <- data.zip(fetched)
+//        } yield {
+//          (d \ "id") must beEqualTo((f \ "id"))
+//          ((d \ "props") \ "age") must beEqualTo(((f \ "props") \ "age"))
+//        }
+//      }
+//      true
+//    }
+//  }
 }
 

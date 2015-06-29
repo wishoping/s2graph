@@ -316,12 +316,12 @@ case class QueryParam(labelWithDir: LabelWithDirection, timestamp: Long = System
 
     val props = Map.empty[Byte, InnerValLike]
     val propsWithTs = Map.empty[Byte, InnerValLikeWithTs]
-    Logger.debug(s"[buildScanRequest]: $srcV, $tgtV, $labelWithDir, $op, $ts, $propsWithTs")
+//    Logger.debug(s"[buildScanRequest]: $srcV, $tgtV, $labelWithDir, $op, $ts, $propsWithTs")
     val (startKey, stopKey) =
       if (tgtVertexOpt.isDefined) {
         val edge = EdgeWithIndexInverted(srcV, tgtV, labelWithDir, op, ts, propsWithTs)
         val keyValue = edge.keyValues.head
-        (keyValue.key, Bytes.add(keyValue.key(), Array[Byte](-1)))
+        (keyValue.key, Bytes.add(keyValue.key(), Array[Byte](0)))
       } else {
         val edge = EdgeWithIndex(srcV, tgtV, labelWithDir, op, ts, labelOrderSeq, props)
         val (minBytes, maxBytes) = startKeyAndStopKey(this.from, this.to)
@@ -333,8 +333,8 @@ case class QueryParam(labelWithDir: LabelWithDirection, timestamp: Long = System
 
     val scan = client.newScanner(label.hbaseTableName)
 
-    Logger.debug(s"[StartKey]: ${startKey.toList}")
-    Logger.debug(s"[StopKey]: ${stopKey.toList}")
+//    Logger.debug(s"[StartKey]: ${startKey.toList}")
+//    Logger.debug(s"[StopKey]: ${stopKey.toList}")
     scan.setStartKey(startKey)
     scan.setStopKey(stopKey)
 
@@ -364,9 +364,9 @@ case class QueryParam(labelWithDir: LabelWithDirection, timestamp: Long = System
         (InnerVal.convertVersion(tgtVertexInnerId, srcColumn.columnType, label.schemaVersion),
           InnerVal.convertVersion(srcVertex.innerId, tgtColumn.columnType, label.schemaVersion))
       } else {
-        val tgtVertexId = srcVertex.id
+        val tgtVertexInnerId = tgtVertexInnerIdOpt.getOrElse(srcVertex.innerId)
         (InnerVal.convertVersion(srcVertex.innerId, tgtColumn.columnType, label.schemaVersion),
-          InnerVal.convertVersion(tgtVertexId.innerId, srcColumn.columnType, label.schemaVersion))
+          InnerVal.convertVersion(tgtVertexInnerId, srcColumn.columnType, label.schemaVersion))
       }
     val (srcVId, tgtVId) =
       (SourceVertexId(srcColumn.id.get, srcInnerId), TargetVertexId(tgtColumn.id.get, tgtInnerId))

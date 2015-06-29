@@ -406,11 +406,11 @@ object GraphStorable extends JSONParser {
         (k, v) <- edgeWithIndex.metas
       } yield {
           val q = Array.fill[Byte](1)(k)
-          Logger.debug(s"RowKey: ${rowKey.toList}")
-          Logger.debug(s"qualifier: ${qualifier.toList}")
-          Logger.debug(s"compositeRowKey: ${compositeRowKey.toList}")
-          Logger.debug(s"Qualifier: ${q.toList}")
-          Logger.debug(s"Value: ${v}")
+//          Logger.debug(s"RowKey: ${rowKey.toList}")
+//          Logger.debug(s"qualifier: ${qualifier.toList}")
+//          Logger.debug(s"compositeRowKey: ${compositeRowKey.toList}")
+//          Logger.debug(s"Qualifier: ${q.toList}")
+//          Logger.debug(s"Value: ${v}")
           new KeyValue(compositeRowKey, edgeCf, q, edgeWithIndex.ts, v.bytes)
         }
       val rets = if (kvs.isEmpty) List(emptyKeyValue) else kvs.toList
@@ -431,15 +431,15 @@ object GraphStorable extends JSONParser {
       pos += 4
       val (labelOrderSeq, isInverted) = bytesToLabelIndexSeqWithIsInverted(keyBytes, pos)
       pos += 1
-      Logger.error(s"rowKey: $srcVertexId, $labelWithDir, $isInverted")
+//      Logger.error(s"rowKey: $srcVertexId, $labelWithDir, $isInverted")
 
       val (idxProps, tgtVertexId) =
         if (pos == keyBytes.length) {
-          Logger.error(s"idxPropsEmpty")
+//          Logger.error(s"idxPropsEmpty")
           (Seq.empty[(Byte, InnerValLike)], srcVertexId)
         } else {
           val (decodedProps, endAt) = bytesToProps(keyBytes, pos, version)
-          Logger.error(s"idxProps: $decodedProps, $endAt")
+//          Logger.error(s"idxProps: $decodedProps, $endAt")
           val decodedVId =
             if (endAt == keyBytes.length) {
               val innerValOpt = decodedProps.toMap.get(LabelMeta.toSeq)
@@ -458,7 +458,7 @@ object GraphStorable extends JSONParser {
       //      assert(labelIndexOpt.get.metaSeqs.length == idxProps.length)
       val idxPropsMerged = labelIndexOpt.get.metaSeqs.zip(idxProps.map(_._2))
 
-      Logger.debug(s"idxPropsMerged: $idxPropsMerged")
+//      Logger.debug(s"idxPropsMerged: $idxPropsMerged")
       val op = GraphUtil.operations("insert")
       //      val qualifierBytes = kvHead.qualifier
       //      val valueBytes = kvHead.value
@@ -477,22 +477,23 @@ object GraphStorable extends JSONParser {
             (propKey -> propVal)
           }
         }
-      Logger.debug(s"props: $props")
+//      Logger.debug(s"props: $props")
       val propsMap = (idxPropsMerged ++ props).toMap
-      Logger.error(s"propsMerged: $propsMap")
-
-      val ret = propsMap.get(LabelMeta.degreeSeq) match {
-        case None =>
-          EdgeWithIndex(Vertex(srcVertexId), Vertex(tgtVertexId), labelWithDir, op, kvHead.timestamp(),
-            labelOrderSeq, propsMap)
-        case Some(degreeVal) =>
-          val ts = kvHead.timestamp
-          val op = GraphUtil.operations("insert")
-          val dummyProps = Map(LabelMeta.degreeSeq -> degreeVal)
-          val tgtVertexId = TargetVertexId(VertexId.DEFAULT_COL_ID, InnerVal.withStr("0", version))
-          EdgeWithIndex(Vertex(srcVertexId), Vertex(tgtVertexId), labelWithDir, op,
-            ts, labelOrderSeq, dummyProps)
-      }
+//      Logger.error(s"propsMerged: $propsMap")
+      val ret = EdgeWithIndex(Vertex(srcVertexId), Vertex(tgtVertexId), labelWithDir, op, kvHead.timestamp(),
+                    labelOrderSeq, propsMap)
+//      val ret = propsMap.get(LabelMeta.degreeSeq) match {
+//        case None =>
+//          EdgeWithIndex(Vertex(srcVertexId), Vertex(tgtVertexId), labelWithDir, op, kvHead.timestamp(),
+//            labelOrderSeq, propsMap)
+//        case Some(degreeVal) =>
+//          val ts = kvHead.timestamp
+//          val op = GraphUtil.operations("insert")
+//          val dummyProps = Map(LabelMeta.degreeSeq -> degreeVal)
+//          val tgtVertexId = TargetVertexId(VertexId.DEFAULT_COL_ID, InnerVal.withStr("0", version))
+//          EdgeWithIndex(Vertex(srcVertexId), Vertex(tgtVertexId), labelWithDir, op,
+//            ts, labelOrderSeq, dummyProps)
+//      }
       //      Logger.error(s"[Decoded]: $ret")
       ret
     }
@@ -625,7 +626,7 @@ object GraphStorable extends JSONParser {
       val id = VertexId.toSourceVertexId(edgeWithIndexInverted.srcVertex.id)
       val rowKey = Bytes.add(id.bytes,
         edgeWithIndexInverted.labelWithDir.bytes,
-        labelOrderSeqWithIsInverted(LabelIndex.defaultSeq, edgeWithIndexInverted.isInverted))
+        labelOrderSeqWithIsInverted(LabelIndex.defaultSeq, true))
 
       val tgtVertexIdBytes = VertexId.toTargetVertexId(edgeWithIndexInverted.tgtVertex.id).bytes
       val idxPropsMap = Map.empty[Byte, InnerValLike]
@@ -637,22 +638,24 @@ object GraphStorable extends JSONParser {
         case Some(vId) => idxPropsBytes
       }
       val compositeRowKey = Bytes.add(rowKey, qualifier)
-      val emptyKeyValue = new KeyValue(compositeRowKey, edgeCf, Array.empty[Byte], edgeWithIndexInverted.version, Array.empty[Byte])
+      val emptyKeyValue = new KeyValue(compositeRowKey, edgeCf,
+        Array.empty[Byte], edgeWithIndexInverted.version, Array.empty[Byte])
 
 
       val kvs = for {
         (k, v) <- edgeWithIndexInverted.props
       } yield {
-          val q = Array[Byte](k)
-          Logger.debug(s"InvertedRowKey: ${rowKey.toList}")
-          Logger.debug(s"Invertedqualifier: ${qualifier.toList}")
-          Logger.debug(s"InvertedcompositeRowKey: ${compositeRowKey.toList}")
-          Logger.debug(s"InvertedQualifier: ${q.toList}")
-          Logger.debug(s"InvertedValue: ${v}")
+          val q = Array.fill[Byte](1)(k)
+//          Logger.debug(s"InvertedRowKey: ${rowKey.toList}")
+//          Logger.debug(s"Invertedqualifier: ${qualifier.toList}")
+//          Logger.debug(s"InvertedcompositeRowKey: ${compositeRowKey.toList}")
+//          Logger.debug(s"InvertedQualifier: ${q.toList}")
+//          Logger.debug(s"InvertedValue: ${v}")
+//          Logger.debug(s"InvertedTimestamp: ${v.ts}")
           new KeyValue(compositeRowKey, edgeCf, q, v.ts, v.bytes)
         }
       val rets = if (kvs.isEmpty) List(emptyKeyValue) else kvs.toList
-      Logger.debug(s"$rets")
+//      Logger.debug(s"$rets")
       rets
     }
 
@@ -669,13 +672,15 @@ object GraphStorable extends JSONParser {
       pos += 4
       val (labelOrderSeq, isInverted) = bytesToLabelIndexSeqWithIsInverted(keyBytes, pos)
       pos += 1
+//      Logger.error(s"rowKey: $srcVertexId, $labelWithDir, $isInverted")
 
       val (idxProps, tgtVertexId) =
         if (pos == keyBytes.length) {
-          Logger.error(s"idxPropsEmpty")
+//          Logger.error(s"idxPropsEmpty")
           (Seq.empty[(Byte, InnerValLike)], srcVertexId)
         } else {
           val (decodedProps, endAt) = bytesToProps(keyBytes, pos, version)
+//          Logger.error(s"idxProps: $decodedProps, $endAt")
           val decodedVId =
             if (endAt == keyBytes.length) {
               val innerValOpt = decodedProps.toMap.get(LabelMeta.toSeq)
@@ -686,12 +691,14 @@ object GraphStorable extends JSONParser {
             }
           (decodedProps, decodedVId)
         }
+
       val labelIndexOpt = LabelIndex.findByLabelIdAndSeq(labelWithDir.labelId, labelOrderSeq)
       assert(labelIndexOpt.isDefined)
 //      assert(labelIndexOpt.get.metaSeqs.length == idxProps.length)
 
       val idxPropsMerged = labelIndexOpt.get.metaSeqs.zip(idxProps.map(_._2))
 
+//      Logger.debug(s"idxPropsMerged: $idxPropsMerged")
       val op = GraphUtil.operations("insert")
 
       /** no degree edge */
@@ -705,6 +712,8 @@ object GraphStorable extends JSONParser {
 //          val propVal = InnerValLikeWithTs(innerVal, kv.timestamp)
           (propKey -> propVal)
         }
+
+//      Logger.debug(s"props: $props")
 
       EdgeWithIndexInverted(Vertex(srcVertexId), Vertex(tgtVertexId), labelWithDir, op, kv.timestamp, props.toMap)
     }

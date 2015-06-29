@@ -376,7 +376,9 @@ object Graph {
               } yield {
                   (edge, edge.rank(queryParam.rank) * prevScore)
                 }
-              QueryResult(queryParam, new ArrayList(edgeWithScores))
+              val ret = QueryResult(queryParam, new ArrayList(edgeWithScores))
+              Logger.debug(s"getEdge: $ret")
+              ret
             }
           }, QueryResult(queryParam))
       }

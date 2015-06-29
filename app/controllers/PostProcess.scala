@@ -148,7 +148,7 @@ object PostProcess extends JSONParser {
       queryResult <- queryResultLs
       (edge, score) <- queryResult.edgeWithScoreLs
     } {
-      if (edge.propsWithTs.contains(LabelMeta.degreeSeq)) {
+      if (edge.propsWithTs.contains(LabelMeta.degreeSeq) && edge.propsWithTs.size == 1) {
         //          degreeJsons += edgeJson
         degrees += Json.obj("label" -> edge.label.label,
           LabelMeta.degree.name ->

@@ -421,7 +421,8 @@ case class Edge(srcVertex: Vertex,
       }
 
     }
-    val ret = edgePuts ++ buildVertexPutsAsync
+    val ret = edgePuts
+    //    ++ buildVertexPutsAsync
     //    Logger.debug(s"$this, $ret")
     ret
   }
@@ -472,18 +473,24 @@ case class Edge(srcVertex: Vertex,
   def compareAndSet(client: HBaseClient)(invertedEdgeOpt: Option[Edge], edgeUpdate: EdgeUpdate): Future[Boolean] = {
     val oldVals = invertedEdgeOpt.map { old =>
       old.edgesWithInvertedIndex.keyValues.map { keyValue =>
+        Logger.error(s"${keyValue.qualifier().toList}, ${keyValue.value.toList}")
         keyValue.qualifier.toList -> keyValue
       }.toMap
     }.getOrElse(Map.empty)
 
-    val futures = edgeUpdate.invertedEdgeMutations.map { newPut =>
-      val oldVal = oldVals.get(newPut.qualifier().toList) match {
-        case None => Array.empty[Byte]
-        case Some(kv) => kv.value
+    val futures = for {
+      newPut <- edgeUpdate.invertedEdgeMutations
+      (oldVal, oldTs) = oldVals.get(newPut.qualifier().toList) match {
+        case None => (Array.empty[Byte], 0L)
+        case Some(kv) => (kv.value, kv.timestamp)
       }
-      Logger.debug(s"compareAndSet: $newPut -> ${oldVal.toList}")
-      Graph.defferedToFuture(client.compareAndSet(newPut, oldVal))(false)
-    }
+      if (oldTs < newPut.timestamp)
+    } yield {
+        Logger.debug(s"compareAndSet: $newPut -> ${oldVal.toList}, ${oldTs}, ${newPut.qualifier.toList}")
+        Graph.defferedToFuture(client.compareAndSet(newPut, oldVal))(false)
+      }
+
+
 
     for {
       rets <- Future.sequence(futures)
@@ -540,12 +547,22 @@ case class Edge(srcVertex: Vertex,
           edgeUpdate = f(invertedEdgeOpt, this)
           ret <- compareAndSet(client)(invertedEdgeOpt, edgeUpdate)
         } {
+          Logger.debug(s"compareAndSetOldEdges: $edges")
+          Logger.debug(s"this: ${
+            this.toLogString
+          }")
+          Logger.debug(s"compareAndSetResult: $ret")
+
           /**
            * we can use CAS operation on inverted Edge checkAndSet() and if it return false
            * then re-read and build update and write recursively.
            */
           if (ret) {
-            Logger.debug(s"mutate successed. ${this.toLogString()}, ${edgeUpdate.toLogString()}")
+            Logger.debug(s"mutate successed. ${
+              this.toLogString()
+            }, ${
+              edgeUpdate.toLogString()
+            }")
           } else {
             Logger.info(s"mutate failed. retry")
             mutate(f, tryNum + 1)
@@ -576,7 +593,8 @@ case class Edge(srcVertex: Vertex,
     mutate(Edge.buildIncrement)
   }
 
-  def toJson() = {}
+  def toJson() = {
+  }
 
   def rank(r: RankParam): Double = {
 
@@ -629,7 +647,7 @@ case class EdgeUpdate(indexedEdgeMutations: List[HBaseRpc] = List.empty,
                       newInvertedEdge: Option[EdgeWithIndexInverted] = None) {
 
   def toLogString(): String = {
-    val indexedEdgeSize = s"indexedEdgeMutationSize: ${indexedEdgeMutations.size}"
+    val indexedEdgeSize = s"\nindexedEdgeMutationSize: ${indexedEdgeMutations.size}"
     val invertedEdgeSize = s"invertedEdgeMutationSize: ${invertedEdgeMutations.size}"
     val deletes = s"deletes: ${edgesToDelete.map(e => e.toString).mkString("\n")}"
     val inserts = s"inserts: ${edgesToInsert.map(e => e.toString).mkString("\n")}"
@@ -670,8 +688,8 @@ object Edge extends JSONParser {
   }
 
   def buildOperation(invertedEdge: Option[Edge], requestEdge: Edge)(f: PropsPairWithTs => (Map[Byte, InnerValLikeWithTs], Boolean)) = {
-    //            Logger.debug(s"oldEdge: ${invertedEdge.map(_.toStringRaw)}")
-    //            Logger.debug(s"requestEdge: ${requestEdge.toStringRaw}")
+    Logger.debug(s"oldEdge: ${invertedEdge.map(_.toLogString())}")
+    Logger.debug(s"requestEdge: ${requestEdge.toLogString}")
 
     val oldPropsWithTs = if (invertedEdge.isEmpty) Map.empty[Byte, InnerValLikeWithTs] else invertedEdge.get.propsWithTs
     val minTsInOldProps = if (invertedEdge.isEmpty) minTsVal else invertedEdge.get.propsWithTs.map(kv => kv._2.ts).min
@@ -686,7 +704,7 @@ object Edge extends JSONParser {
         f(oldPropsWithTs, requestEdge.propsWithTs, requestEdge.ts, requestEdge.schemaVer)
 
       if (!shouldReplace) {
-        Logger.info(s"drop request $requestEdge becaseu shouldReplace is $shouldReplace")
+        Logger.info(s"drop request $requestEdge becaseu shouldReplace is $shouldReplace, $invertedEdge")
         EdgeUpdate()
       } else {
 
@@ -751,8 +769,8 @@ object Edge extends JSONParser {
 
     val update = EdgeUpdate(indexedEdgeMutations, invertedEdgeMutations, edgesToDelete, edgesToInsert, edgeInverted)
 
-    Logger.debug(s"UpdatedProps: ${newPropsWithTs}\n")
-    Logger.debug(s"EdgeUpdate: $update\n")
+    //    Logger.debug(s"UpdatedProps: ${newPropsWithTs}\n")
+    //    Logger.debug(s"EdgeUpdate: $update\n")
     update
   }
 
