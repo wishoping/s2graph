@@ -89,7 +89,8 @@ object InnerVal extends HBaseDeserializable {
     version match {
       case VERSION2 => v2.InnerVal.fromBytes(bytes, offset, len, version)
       case VERSION1 => v1.InnerVal.fromBytes(bytes, offset, len, version)
-      case _ => throw notSupportedEx(version)
+//      case _ => throw notSupportedEx(version)
+      case _ => v2.InnerVal.fromBytes(bytes, offset, len, version)
     }
   }
 
@@ -97,7 +98,8 @@ object InnerVal extends HBaseDeserializable {
     version match {
       case VERSION2 => v2.InnerVal(BigDecimal(l))
       case VERSION1 => v1.InnerVal(Some(l), None, None)
-      case _ => throw notSupportedEx(version)
+//      case _ => throw notSupportedEx(version)
+      case _ => v2.InnerVal(BigDecimal(l))
     }
   }
 
@@ -105,7 +107,8 @@ object InnerVal extends HBaseDeserializable {
     version match {
       case VERSION2 => v2.InnerVal(BigDecimal(i))
       case VERSION1 => v1.InnerVal(Some(i.toLong), None, None)
-      case _ => throw notSupportedEx(version)
+//      case _ => throw notSupportedEx(version)
+      case _ => v2.InnerVal(BigDecimal(i))
     }
   }
 
@@ -113,7 +116,8 @@ object InnerVal extends HBaseDeserializable {
     version match {
       case VERSION2 => v2.InnerVal(BigDecimal(f))
       case VERSION1 => v1.InnerVal(Some(f.toLong), None, None)
-      case _ => throw notSupportedEx(version)
+//      case _ => throw notSupportedEx(version)
+      case _ => v2.InnerVal(BigDecimal(f))
     }
   }
 
@@ -121,7 +125,8 @@ object InnerVal extends HBaseDeserializable {
     version match {
       case VERSION2 => v2.InnerVal(BigDecimal(d))
       case VERSION1 => v1.InnerVal(Some(d.toLong), None, None)
-      case _ => throw notSupportedEx(version)
+//      case _ => throw notSupportedEx(version)
+      case _ => v2.InnerVal(BigDecimal(d))
     }
   }
 
@@ -129,7 +134,8 @@ object InnerVal extends HBaseDeserializable {
     version match {
       case VERSION2 => v2.InnerVal(num)
       case VERSION1 => v1.InnerVal(Some(num.toLong), None, None)
-      case _ => throw notSupportedEx(version)
+//      case _ => throw notSupportedEx(version)
+      case _ => v2.InnerVal(num)
     }
   }
 
@@ -137,14 +143,16 @@ object InnerVal extends HBaseDeserializable {
     version match {
       case VERSION2 => v2.InnerVal(b)
       case VERSION1 => v1.InnerVal(None, None, Some(b))
-      case _ => throw notSupportedEx(version)
+//      case _ => throw notSupportedEx(version)
+      case _ => v2.InnerVal(b)
     }
   }
 
   def withBlob(blob: Array[Byte], version: String): InnerValLike = {
     version match {
       case VERSION2 => v2.InnerVal(blob)
-      case _ => throw notSupportedEx(version)
+//      case _ => throw notSupportedEx(version)
+      case _ => v2.InnerVal(blob)
     }
   }
 
@@ -152,7 +160,8 @@ object InnerVal extends HBaseDeserializable {
     version match {
       case VERSION2 => v2.InnerVal(s)
       case VERSION1 => v1.InnerVal(None, Some(s), None)
-      case _ => throw notSupportedEx(version)
+//      case _ => throw notSupportedEx(version)
+      case _ => v2.InnerVal(s)
     }
   }
 
@@ -161,7 +170,8 @@ object InnerVal extends HBaseDeserializable {
     version match {
       case VERSION2 => v2.InnerVal.fromBytes(bytes, 0, bytes.length, version)
       case VERSION1 => v1.InnerVal.fromBytes(bytes, 0, bytes.length, version)
-      case _ => throw notSupportedEx(version)
+//      case _ => throw notSupportedEx(version)
+      case _ => v2.InnerVal.fromBytes(bytes, 0, bytes.length, version)
     }
   }
 
@@ -192,7 +202,19 @@ object InnerVal extends HBaseDeserializable {
         } else {
           innerVal
         }
-      case _ => throw notSupportedEx(toVersion)
+//      case _ => throw notSupportedEx(toVersion)
+      case _ =>
+        if (innerVal.isInstanceOf[v1.InnerVal]) {
+          val obj = innerVal.asInstanceOf[v1.InnerVal]
+          obj.valueType match {
+            case "long" => InnerVal.withLong(obj.longV.get, toVersion)
+            case "string" => InnerVal.withStr(obj.strV.get, toVersion)
+            case "boolean" => InnerVal.withBoolean(obj.boolV.get, toVersion)
+            case _ => throw new Exception(s"InnerVal should be [long/integeer/short/byte/string/boolean]")
+          }
+        } else {
+          innerVal
+        }
     }
 //    Logger.debug(s"convertVersion: $innerVal, $dataType, $toVersion, $ret, ${innerVal.bytes.toList}, ${ret.bytes.toList}")
     ret

@@ -40,25 +40,36 @@ case class EdgeWithIndexInverted(srcVertex: Vertex,
   lazy val label = Label.findById(labelWithDir.labelId)
   lazy val propsWithoutTs = props.map(kv => (kv._1 -> kv._2.innerVal))
 
-  lazy val keyValue = schemaVer match {
+  lazy val keyValues = (schemaVer match {
     case InnerVal.VERSION1 => GraphStorable.SnapshotEdgeLikeV1.encode(this)
     case InnerVal.VERSION2 => GraphStorable.SnapshotEdgeLikeV2.encode(this)
-  }
-  def buildPut() = {
-    val put = new Put(keyValue.key())
-    put.addColumn(edgeCf, keyValue.qualifier(), keyValue.timestamp, keyValue.value())
+  }).toList
+
+  def buildPuts() = {
+    for {
+      keyValue <- keyValues
+    } yield {
+      val put = new Put(keyValue.key())
+      put.addColumn(edgeCf, keyValue.qualifier(), keyValue.timestamp, keyValue.value())
+    }
   }
 
-  def buildPutAsync() = {
-    new PutRequest(label.hbaseTableName.getBytes, keyValue.key, edgeCf,
-      keyValue.qualifier, keyValue.value, keyValue.timestamp)
+  def buildPutsAsync() = {
+    for {
+      keyValue <- keyValues
+    } yield {
+      new PutRequest(label.hbaseTableName.getBytes, keyValue.key, edgeCf,
+        keyValue.qualifier, keyValue.value, keyValue.timestamp)
+    }
   }
 
-  def buildDeleteAsync() = {
-    val ret = new DeleteRequest(label.hbaseTableName.getBytes,
-      keyValue.key, edgeCf, keyValue.value, keyValue.timestamp)
-    Logger.debug(s"$ret, $version")
-    ret
+
+  def buildDeletesAsync() = {
+    for {
+      keyValue <- keyValues
+    } yield {
+      new DeleteRequest(label.hbaseTableName.getBytes, keyValue.key, edgeCf, keyValue.value, keyValue.timestamp)
+    }
   }
 
   def toEdge = {
@@ -122,11 +133,11 @@ case class EdgeWithIndex(srcVertex: Vertex,
   lazy val ordersKeyMap = orders.map(_._1).toSet
   lazy val metas = for ((k, v) <- props if !ordersKeyMap.contains(k)) yield (k -> v)
 
-  lazy val keyValue = schemaVer match {
+  lazy val keyValues = (schemaVer match {
     case InnerVal.VERSION1 => GraphStorable.IndexedEdgeLikeV1.encode(this)
     case InnerVal.VERSION2 => GraphStorable.IndexedEdgeLikeV2.encode(this)
 
-  }
+  }).toList
 //  lazy val rowKey = EdgeRowKey(VertexId.toSourceVertexId(srcVertex.id), labelWithDir, labelIndexSeq, isInverted = false)(schemaVer)
 //  lazy val qualifier = EdgeQualifier(orders, VertexId.toTargetVertexId(tgtVertex.id), op)(label.schemaVersion)
 //  lazy val value = EdgeValue(metas.toList)(label.schemaVersion)
@@ -138,11 +149,12 @@ case class EdgeWithIndex(srcVertex: Vertex,
       Logger.error(s"$this dont have all props for index")
       List.empty[Put]
     } else {
-      val put = new Put(keyValue.key)
-      //    Logger.debug(s"$this")
-      //      Logger.debug(s"EdgeWithIndex.buildPut: $rowKey, $qualifier, $value")
-      put.addColumn(edgeCf, keyValue.qualifier, keyValue.timestamp, keyValue.value)
-      List(put)
+      for {
+        keyValue <- keyValues
+      } yield {
+        val put = new Put(keyValue.key)
+        put.addColumn(edgeCf, keyValue.qualifier, keyValue.timestamp, keyValue.value)
+      }
     }
   }
 
@@ -151,26 +163,23 @@ case class EdgeWithIndex(srcVertex: Vertex,
       Logger.error(s"$this dont have all props for index")
       List.empty[PutRequest]
     } else {
-      val put = new PutRequest(label.hbaseTableName.getBytes,
-        keyValue.key, edgeCf, keyValue.qualifier, keyValue.value, keyValue.timestamp)
-      //      Logger.debug(s"$put")
-      List(put)
+      for {
+        keyValue <- keyValues
+      } yield {
+        new PutRequest(label.hbaseTableName.getBytes,
+          keyValue.key, edgeCf, keyValue.qualifier, keyValue.value, keyValue.timestamp)
+      }
     }
   }
 
   def buildIncrementsBulk(amount: Long = 1L): List[Put] = {
-    //    if (!hasAllPropsForIndex) {
-    //      Logger.error(s"$this dont have all props for index")
-    //      List.empty[Increment]
-    //    } else {
-
-    //    val increment = new Increment(rowKey.bytes)
-    //    increment.addColumn(edgeCf, Array.empty[Byte], amount)
-    //    List(increment)
-    val put = new Put(keyValue.key)
-    put.addColumn(edgeCf, Array.empty[Byte], Bytes.toBytes(amount))
-    List(put)
-    //    }
+    // skip validation since this should be used bulk only
+    for {
+      keyValue <- keyValues
+    } yield {
+      val put = new Put(keyValue.key)
+      put.addColumn(edgeCf, Array.empty[Byte], Bytes.toBytes(amount))
+    }
   }
 
   def buildIncrementsAsync(amount: Long = 1L): List[HBaseRpc] = {
@@ -178,34 +187,48 @@ case class EdgeWithIndex(srcVertex: Vertex,
       Logger.error(s"$this dont have all props for index")
       List.empty[AtomicIncrementRequest]
     } else {
-      val incr = new AtomicIncrementRequest(label.hbaseTableName.getBytes,
-        keyValue.key, edgeCf, Array.empty[Byte], amount)
-      List(incr)
+      for {
+        keyValue <- keyValues
+      } yield {
+        new AtomicIncrementRequest(label.hbaseTableName.getBytes,
+          keyValue.key, edgeCf, Array.empty[Byte], amount)
+      }
     }
   }
 
   def buildDeletes(): List[Delete] = {
     if (!hasAllPropsForIndex) List.empty[Delete]
     else {
-      val delete = new Delete(keyValue.key)
-      delete.addColumns(edgeCf, keyValue.qualifier, keyValue.timestamp)
-      List(delete)
+      for {
+        keyValue <- keyValues
+      } yield {
+        val delete = new Delete(keyValue.key)
+        delete.addColumns(edgeCf, keyValue.qualifier, keyValue.timestamp)
+      }
     }
   }
 
   def buildDeletesAsync(): List[HBaseRpc] = {
     if (!hasAllPropsForIndex) List.empty[DeleteRequest]
     else {
-      List(new DeleteRequest(label.hbaseTableName.getBytes,
-        keyValue.key, edgeCf, keyValue.qualifier, keyValue.timestamp))
+      for {
+        keyValue <- keyValues
+      } yield {
+        new DeleteRequest(label.hbaseTableName.getBytes,
+          keyValue.key, edgeCf, keyValue.qualifier, keyValue.timestamp)
+      }
     }
   }
 
   def buildDegreeDeletesAsync(): List[HBaseRpc] = {
     if (!hasAllPropsForIndex) List.empty[DeleteRequest]
     else {
-      List(new DeleteRequest(label.hbaseTableName.getBytes,
-        keyValue.key, edgeCf, Array.empty[Byte], ts))
+      for {
+        keyValue <- keyValues
+      } yield {
+        new DeleteRequest(label.hbaseTableName.getBytes,
+          keyValue.key, edgeCf, Array.empty[Byte], ts)
+      }
     }
   }
 
@@ -406,14 +429,14 @@ case class Edge(srcVertex: Vertex,
   }
 
   def insertBulk() = {
-    val puts = edgesWithInvertedIndex.buildPut() :: relatedEdges.flatMap { relEdge =>
+    val puts = edgesWithInvertedIndex.buildPuts() ++ relatedEdges.flatMap { relEdge =>
       relEdge.edgesWithIndex.flatMap(e => e.buildPuts())
     }
     puts
   }
 
   def insert() = {
-    val puts = edgesWithInvertedIndex.buildPutAsync() :: relatedEdges.flatMap { relEdge =>
+    val puts = edgesWithInvertedIndex.buildPutsAsync() ++ relatedEdges.flatMap { relEdge =>
       relEdge.edgesWithIndex.flatMap(e => e.buildPutsAsync)
     }
     val incrs = relatedEdges.flatMap { relEdge =>
@@ -426,7 +449,7 @@ case class Edge(srcVertex: Vertex,
   }
 
   def buildDeleteBulk() = {
-    toInvertedEdgeHashLike().buildDeleteAsync() :: edgesWithIndex.flatMap { e => e.buildDeletesAsync() ++
+    toInvertedEdgeHashLike().buildDeletesAsync() ++ edgesWithIndex.flatMap { e => e.buildDeletesAsync() ++
       e.buildDegreeDeletesAsync()
     }
   }
@@ -449,10 +472,10 @@ case class Edge(srcVertex: Vertex,
    */
 
   def compareAndSet(client: HBaseClient)(invertedEdgeOpt: Option[Edge], edgeUpdate: EdgeUpdate): Future[Boolean] = {
-    val expected = invertedEdgeOpt.map { e =>
-      e.edgesWithInvertedIndex.keyValue.value
-    }.getOrElse(Array.empty[Byte])
-    val futures = edgeUpdate.invertedEdgeMutations.map { newPut =>
+    val expectedValues = invertedEdgeOpt.map { e =>
+      e.edgesWithInvertedIndex.keyValues.map { kv => kv.value }
+    }.getOrElse(Seq.empty)
+    val futures = edgeUpdate.invertedEdgeMutations.zip(expectedValues).map { case (newPut, expected) =>
       Graph.defferedToFuture(client.compareAndSet(newPut, expected))(false)
     }
 
@@ -593,10 +616,10 @@ case class Edge(srcVertex: Vertex,
 
 }
 
-case class EdgeUpdate(indexedEdgeMutations: List[HBaseRpc] = List.empty[HBaseRpc],
-                      invertedEdgeMutations: List[PutRequest] = List.empty[PutRequest],
-                      edgesToDelete: List[EdgeWithIndex] = List.empty[EdgeWithIndex],
-                      edgesToInsert: List[EdgeWithIndex] = List.empty[EdgeWithIndex],
+case class EdgeUpdate(indexedEdgeMutations: List[HBaseRpc] = List.empty,
+                      invertedEdgeMutations: List[PutRequest] = List.empty,
+                      edgesToDelete: List[EdgeWithIndex] = List.empty,
+                      edgesToInsert: List[EdgeWithIndex] = List.empty,
                       newInvertedEdge: Option[EdgeWithIndexInverted] = None) {
 
   def toLogString(): String = {
@@ -716,7 +739,7 @@ object Edge extends JSONParser {
 
     val deleteMutations = edgesToDelete.flatMap(edge => edge.buildDeletesAsync)
     val insertMutations = edgesToInsert.flatMap(edge => edge.buildPutsAsync)
-    val invertMutations = edgeInverted.map(e => List(e.buildPutAsync)).getOrElse(List.empty[PutRequest])
+    val invertMutations = edgeInverted.map{ e => e.buildPutsAsync()}.getOrElse(Seq.empty).toList
     val indexedEdgeMutations = deleteMutations ++ insertMutations
     val invertedEdgeMutations = invertMutations
 
@@ -877,13 +900,13 @@ object Edge extends JSONParser {
   def fromString(s: String): Option[Edge] = Graph.toEdge(s)
 
 
-  def toEdge(kv: org.hbase.async.KeyValue, param: QueryParam, isSnapshotEdge: Boolean = false): Option[Edge] = {
-    Logger.debug(s"$param -> $kv")
+  def toEdge(kvs: Seq[KeyValue], param: QueryParam, isSnapshotEdge: Boolean = false): Option[Edge] = {
+    kvs.foreach(kv => Logger.debug(s"$param -> $kv"))
     /** degree edge is not considered yet */
 //    if (kv.qualifier().isEmpty) None
 //    else {
-      if (isSnapshotEdge) GraphStorable.toSnapshotEdge(kv, param)
-      else GraphStorable.toIndexedEdge(kv, param)
+      if (isSnapshotEdge) GraphStorable.toSnapshotEdge(kvs, param)
+      else GraphStorable.toIndexedEdge(kvs, param)
 //    }
 
   }

@@ -43,6 +43,7 @@ trait HBaseSerializable {
   val bytes: Array[Byte]
 }
 trait HBaseDeserializable {
+  val VERSION3 = "v3"
   val VERSION2 = "v2"
   val VERSION1 = "v1"
   val DEFAULT_VERSION = VERSION2
