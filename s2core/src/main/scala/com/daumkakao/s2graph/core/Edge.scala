@@ -645,7 +645,7 @@ object Edge extends JSONParser {
   val minOperationTs = 1L
   val minTsVal = 0L
   // FIXME:
-  val maxTryNum = 2
+  val maxTryNum = 10
   /** now version information is required also **/
   type PropsPairWithTs = (Map[Byte, InnerValLikeWithTs], Map[Byte, InnerValLikeWithTs], Long, String)
 

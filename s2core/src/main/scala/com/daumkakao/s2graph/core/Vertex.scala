@@ -1,12 +1,11 @@
 package com.daumkakao.s2graph.core
 
-// import com.daumkakao.s2graph.core.mysqls._
+//import com.daumkakao.s2graph.core.mysqls._
 import com.daumkakao.s2graph.core.models._
 
 import com.daumkakao.s2graph.core.types2._
 import org.apache.hadoop.hbase.client.Put
 import org.apache.hadoop.hbase.client.Delete
-import org.apache.hadoop.hbase.util.Bytes
 import play.api.libs.json.Json
 import scala.collection.mutable.{HashMap, ListBuffer}
 import org.hbase.async.{DeleteRequest, HBaseRpc, PutRequest, GetRequest}
@@ -25,16 +24,10 @@ case class Vertex(id: VertexId,
   lazy val service = Service.findById(serviceColumn.serviceId)
   lazy val (hbaseZkAddr, hbaseTableName) = (service.cluster, service.hTableName)
 
-//  lazy val rowKey = VertexRowKey(id)(schemaVer)
-  lazy val rowKey = id
+  lazy val rowKey = VertexRowKey(id)(schemaVer)
   lazy val defaultProps = Map(ColumnMeta.lastModifiedAtColumnSeq.toInt -> InnerVal.withLong(ts, schemaVer))
-  lazy val qualifiersWithValues = for {
-    (k, v) <- props ++ defaultProps
-  } yield {
-      Bytes.toBytes(k) -> v.bytes
-    }
-//  lazy val qualifiersWithValues =
-//    for ((k, v) <- props ++ defaultProps) yield (VertexQualifier(k)(schemaVer), v)
+  lazy val qualifiersWithValues =
+    for ((k, v) <- props ++ defaultProps) yield (VertexQualifier(k)(schemaVer), v)
 
   /** TODO: make this as configurable */
   override lazy val serviceName = service.serviceName
@@ -51,7 +44,7 @@ case class Vertex(id: VertexId,
     //    play.api.Logger.error(s"put: $this => $rowKey")
     val put = new Put(rowKey.bytes)
     for ((q, v) <- qualifiersWithValues) {
-      put.addColumn(vertexCf, q, ts, v)
+      put.addColumn(vertexCf, q.bytes, ts, v.bytes)
     }
     List(put)
   }
@@ -60,8 +53,8 @@ case class Vertex(id: VertexId,
     val qualifiers = ListBuffer[Array[Byte]]()
     val values = ListBuffer[Array[Byte]]()
     for ((q, v) <- qualifiersWithValues) {
-      qualifiers += q
-      values += v
+      qualifiers += q.bytes
+      values += v.bytes
       //        new PutRequest(hbaseTableName.getBytes, rowKey.bytes, vertexCf, qualifier.bytes, v.bytes, ts)
     }
     val put = new PutRequest(hbaseTableName.getBytes, rowKey.bytes, vertexCf, qualifiers.toArray, values.toArray, ts)
@@ -79,7 +72,7 @@ case class Vertex(id: VertexId,
   def buildPutsAll(): List[HBaseRpc] = {
     op match {
       case d: Byte if d == GraphUtil.operations("delete") => buildDeleteAsync()
-//      case dAll: Byte if dAll == GraphUtil.operations("deleteAll") => buildDeleteAllAsync()
+      //      case dAll: Byte if dAll == GraphUtil.operations("deleteAll") => buildDeleteAllAsync()
       case _ => buildPutsAsync()
     }
   }
@@ -111,6 +104,17 @@ case class Vertex(id: VertexId,
 
   def toEdgeVertex() = Vertex(SourceVertexId(id.colId, innerId), ts, props, op)
 
+  override def toLogString(): String = {
+
+    val (serviceName, columnName) = if (!id.storeColId) ("", "")
+    else {
+      val serviceColumn = ServiceColumn.findById(id.colId)
+      (serviceColumn.service.serviceName, serviceColumn.columnName)
+    }
+    val ls = ListBuffer(ts, GraphUtil.fromOp(op), "v", id.innerId, serviceName, columnName)
+    if (!propsWithName.isEmpty) ls += Json.toJson(propsWithName)
+    ls.mkString("\t")
+  }
 
   override def hashCode() = {
     id.hashCode()
@@ -125,17 +129,6 @@ case class Vertex(id: VertexId,
   }
 
   def withProps(newProps: Map[Int, InnerValLike]) = Vertex(id, ts, newProps, op)
-
-  def toLogString(): String = {
-    val (serviceName, columnName) =
-      if (!id.storeColId) ("", "")
-      else {
-        (serviceColumn.service.serviceName, serviceColumn.columnName)
-      }
-    val ls = ListBuffer(ts, GraphUtil.fromOp(op), "v", id.innerId, serviceName, columnName)
-    if (!propsWithName.isEmpty) ls += Json.toJson(propsWithName)
-    ls.mkString("\t")
-  }
 }
 
 object Vertex {
@@ -150,7 +143,7 @@ object Vertex {
 
       val head = kvs.head
       val headBytes = head.key()
-      val id = VertexId.fromBytes(headBytes, 0, headBytes.length, version)
+      val rowKey = VertexRowKey.fromBytes(headBytes, 0, headBytes.length, version)
 
       var maxTs = Long.MinValue
       /**
@@ -162,16 +155,16 @@ object Vertex {
         for {
           kv <- kvs
           kvQual = kv.qualifier()
-          propKey = kvQual.head
+          qualifier = VertexQualifier.fromBytes(kvQual, 0, kvQual.length, version)
           v = kv.value()
-          propVal = InnerVal.fromBytes(v, 0, v.length, version)
+          value = InnerVal.fromBytes(v, 0, v.length, version)
           ts = kv.timestamp()
         } yield {
           if (ts > maxTs) maxTs = ts
-          (propKey.toInt, propVal)
+          (qualifier.propKey, value)
         }
       assert(maxTs != Long.MinValue)
-      Option(Vertex(id = id, ts = maxTs, props = props.toMap, op = 0))
+      Some(Vertex(rowKey.id, maxTs, props.toMap))
     }
   }
 }
