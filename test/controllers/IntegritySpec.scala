@@ -160,42 +160,42 @@ class IntegritySpec extends Specification {
     "schemaVersion": "v1"
   }"""
 
-  val createLabel4 = s"""
-  {
-    "label": "$testLabelNameV3",
-    "srcServiceName": "$testServiceName",
-    "srcColumnName": "$testColumnName",
-    "srcColumnType": "long",
-    "tgtServiceName": "$testServiceName",
-    "tgtColumnName": "${testTgtColumnName}_v3",
-    "tgtColumnType": "string",
-    "indexProps": [
-    {
-      "name": "time",
-      "dataType": "long",
-      "defaultValue": 0
-    },
-    {
-      "name": "weight",
-      "dataType": "long",
-      "defaultValue": 0
-    },
-    {
-      "name": "is_hidden",
-      "dataType": "boolean",
-      "defaultValue": false
-    },
-    {
-      "name": "is_blocked",
-      "dataType": "boolean",
-      "defaultValue": false
-    }
-    ],
-    "props": [],
-    "consistencyLevel": "strong",
-    "isDirected": true,
-    "schemaVersion": "v3"
-  }"""
+//  val createLabel4 = s"""
+//  {
+//    "label": "$testLabelNameV3",
+//    "srcServiceName": "$testServiceName",
+//    "srcColumnName": "$testColumnName",
+//    "srcColumnType": "long",
+//    "tgtServiceName": "$testServiceName",
+//    "tgtColumnName": "${testTgtColumnName}_v3",
+//    "tgtColumnType": "string",
+//    "indexProps": [
+//    {
+//      "name": "time",
+//      "dataType": "long",
+//      "defaultValue": 0
+//    },
+//    {
+//      "name": "weight",
+//      "dataType": "long",
+//      "defaultValue": 0
+//    },
+//    {
+//      "name": "is_hidden",
+//      "dataType": "boolean",
+//      "defaultValue": false
+//    },
+//    {
+//      "name": "is_blocked",
+//      "dataType": "boolean",
+//      "defaultValue": false
+//    }
+//    ],
+//    "props": [],
+//    "consistencyLevel": "strong",
+//    "isDirected": true,
+//    "schemaVersion": "v3"
+//  }"""
 
   val vertexPropsKeys = List(
     ("age", "int")
@@ -331,14 +331,14 @@ class IntegritySpec extends Specification {
           Logger.error(s">> Label already exist: $createLabel3, $label")
       }
 
-      // 5. create version(v3) label
-      Label.findByName(testLabelNameV3, useCache = false) match {
-        case None =>
-          result = AdminController.createLabelInner(Json.parse(createLabel4))
-          Logger.error(s">> Label created : $createLabel4, $result")
-        case Some(label) =>
-          Logger.error(s">> Label already exist: $createLabel4, $label")
-      }
+//      // 5. create version(v3) label
+//      Label.findByName(testLabelNameV3, useCache = false) match {
+//        case None =>
+//          result = AdminController.createLabelInner(Json.parse(createLabel4))
+//          Logger.error(s">> Label created : $createLabel4, $result")
+//        case Some(label) =>
+//          Logger.error(s">> Label already exist: $createLabel4, $label")
+//      }
 
       // 5. create vertex
       vertexPropsKeys.map { case (key, keyType) =>
@@ -352,7 +352,7 @@ class IntegritySpec extends Specification {
 
   def runTC(tcNum: Int, tcString: String, opWithProps: List[(Long, String, String)], expected: Map[String, String]) = {
     for {
-      labelName <- List(testLabelName, testLabelName2, testLabelNameV1, testLabelNameV3)
+      labelName <- List(testLabelName, testLabelName2, testLabelNameV1)
       i <- (1 to NUM_OF_EACH_TEST)
     } {
       val srcId = ((tcNum * 1000) + i).toString

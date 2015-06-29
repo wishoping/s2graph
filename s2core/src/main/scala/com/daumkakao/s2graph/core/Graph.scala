@@ -346,14 +346,27 @@ object Graph {
     }
   }
 
+
+
   /** actual request to HBase */
-  private def fetchEdges(getRequest: GetRequest, queryParam: QueryParam, prevScore: Double): Deferred[QueryResult] = {
+  private def fetchEdges(getRequest: GetRequest, queryParam: QueryParam,
+                         prevScore: Double, isSnapshotEdge: Boolean = false): Deferred[QueryResult] = {
     try {
       val client = getClient(queryParam.label.hbaseZkAddr)
-      deferredCallbackWithFallback(client.get(getRequest))({ kvs =>
+      /** now hbase result should be ArrayList[ArrayList[KeyValue]] */
+      val deferred = client.get(getRequest).addCallback(new Callback[ArrayList[ArrayList[KeyValue]], ArrayList[KeyValue]] {
+        def call(row: ArrayList[KeyValue]): ArrayList[ArrayList[KeyValue]] = {
+          val rows = new ArrayList[ArrayList[KeyValue]]()
+          rows.add(row)
+          rows
+        }
+      })
+
+      deferredCallbackWithFallback(deferred)({ rows =>
         val edgeWithScores = for {
-          kv <- kvs
-          edge <- Edge.toEdge(kv, queryParam)
+          row <- rows
+          kv <- row
+          edge <- Edge.toEdge(Seq(kv), queryParam, isSnapshotEdge = isSnapshotEdge)
         } yield {
             (edge, edge.rank(queryParam.rank) * prevScore)
           }
@@ -416,7 +429,7 @@ object Graph {
     }
   }
 
-  def getEdge(srcVertex: Vertex, tgtVertex: Vertex, queryParam: QueryParam): Future[QueryResult] = {
+  def getEdge(srcVertex: Vertex, tgtVertex: Vertex, queryParam: QueryParam, prevScore: Double = 1.0): Future[QueryResult] = {
     implicit val ex = this.executionContext
 
 
@@ -424,23 +437,18 @@ object Graph {
     val dir = queryParam.labelWithDir.dir
     val invertedEdge = Edge(srcVertex, tgtVertex, queryParam.labelWithDir).toInvertedEdgeHashLike()
 
-    val keyValue = invertedEdge.keyValue
-    val rowKey = keyValue.key
-
+    val keyValue = invertedEdge.keyValues.head
     val qualifier = keyValue.qualifier
+
     val client = getClient(label.hbaseZkAddr)
     val getRequest = new GetRequest(label.hbaseTableName.getBytes(), keyValue.key, edgeCf, qualifier)
     Logger.debug(s"$getRequest")
-    val qParam = QueryParam(LabelWithDirection(label.id.get, dir.toByte))
-    defferedToFuture(client.get(getRequest))(emptyKVs).map { kvs =>
-      val edgeWithScoreLs = for {
-        kv <- kvs
-        edge <- Edge.toEdge(kv, qParam, isSnapshotEdge = true)
-      } yield {
-          Logger.debug(s"$edge")
-          (edge, edge.rank(qParam.rank))
-        }
-      QueryResult(qParam, edgeWithScoreLs)
+
+    /** now hbase result should be ArrayList[ArrayList[KeyValue]] */
+    val deferred = fetchEdges(getRequest, queryParam, 1.0, isSnapshotEdge = true)
+
+    defferedToFuture(deferred)(QueryResult(queryParam)).map { queryResult =>
+      queryResult
     }
   }
 

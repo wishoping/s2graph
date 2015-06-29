@@ -299,9 +299,9 @@ case class QueryParam(labelWithDir: LabelWithDirection, timestamp: Long = System
     val props = Map.empty[Byte, InnerValLike]
     val propsWithTs = Map.empty[Byte, InnerValLikeWithTs]
     val rowKey = if (tgtVertexInnerIdOpt.isDefined) {
-      EdgeWithIndexInverted(srcV, tgtV, labelWithDir, op, ts, propsWithTs).keyValue.key
+      EdgeWithIndexInverted(srcV, tgtV, labelWithDir, op, ts, propsWithTs).keyValues.head.key
     } else {
-      EdgeWithIndex(srcV, tgtV, labelWithDir, op, ts, labelOrderSeq, props).keyValue.key
+      EdgeWithIndex(srcV, tgtV, labelWithDir, op, ts, labelOrderSeq, props).keyValues.head.key
     }
 
     Logger.debug(s"getRequest: ${rowKey.toList}")

@@ -472,11 +472,18 @@ case class Edge(srcVertex: Vertex,
    */
 
   def compareAndSet(client: HBaseClient)(invertedEdgeOpt: Option[Edge], edgeUpdate: EdgeUpdate): Future[Boolean] = {
-    val expectedValues = invertedEdgeOpt.map { e =>
-      e.edgesWithInvertedIndex.keyValues.map { kv => kv.value }
-    }.getOrElse(Seq.empty)
-    val futures = edgeUpdate.invertedEdgeMutations.zip(expectedValues).map { case (newPut, expected) =>
-      Graph.defferedToFuture(client.compareAndSet(newPut, expected))(false)
+    val oldVals = invertedEdgeOpt.map { old =>
+      old.edgesWithInvertedIndex.keyValues.map { keyValue =>
+        keyValue.qualifier.toList -> keyValue
+      }.toMap
+    }.getOrElse(Map.empty)
+
+    val futures = edgeUpdate.invertedEdgeMutations.map { newPut =>
+      val oldVal = oldVals.get(newPut.qualifier().toList) match {
+        case None => Array.empty[Byte]
+        case Some(kv) => kv.value
+      }
+      Graph.defferedToFuture(client.compareAndSet(newPut, oldVal))(false)
     }
 
     for {
@@ -905,10 +912,11 @@ object Edge extends JSONParser {
     /** degree edge is not considered yet */
 //    if (kv.qualifier().isEmpty) None
 //    else {
+    if (kvs.isEmpty) None
+    else {
       if (isSnapshotEdge) GraphStorable.toSnapshotEdge(kvs, param)
       else GraphStorable.toIndexedEdge(kvs, param)
-//    }
-
+    }
   }
 //
 //    val version = kv.timestamp()
