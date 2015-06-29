@@ -40,10 +40,9 @@ case class EdgeWithIndexInverted(srcVertex: Vertex,
   lazy val label = Label.findById(labelWithDir.labelId)
   lazy val propsWithoutTs = props.map(kv => (kv._1 -> kv._2.innerVal))
 
-  lazy val keyValues = (schemaVer match {
-    case InnerVal.VERSION1 => GraphStorable.SnapshotEdgeLikeV1.encode(this)
-    case InnerVal.VERSION2 => GraphStorable.SnapshotEdgeLikeV2.encode(this)
-  }).toList
+  lazy val keyValues = GraphStorable.toKeyValue(this)
+  lazy val startKey = GraphStorable.startKey(this)
+  lazy val stopKey = GraphStorable.stopKey(this)
 
   def buildPuts() = {
     for {
@@ -130,14 +129,13 @@ case class EdgeWithIndex(srcVertex: Vertex,
       case Some(v) => (k -> v)
     }
   }
+
   lazy val ordersKeyMap = orders.map(_._1).toSet
   lazy val metas = for ((k, v) <- props if !ordersKeyMap.contains(k)) yield (k -> v)
 
-  lazy val keyValues = (schemaVer match {
-    case InnerVal.VERSION1 => GraphStorable.IndexedEdgeLikeV1.encode(this)
-    case InnerVal.VERSION2 => GraphStorable.IndexedEdgeLikeV2.encode(this)
-
-  }).toList
+  lazy val keyValues = GraphStorable.toKeyValue(this)
+  lazy val startKey = GraphStorable.startKey(this)
+  lazy val stopKey = GraphStorable.stopKey(this)
 //  lazy val rowKey = EdgeRowKey(VertexId.toSourceVertexId(srcVertex.id), labelWithDir, labelIndexSeq, isInverted = false)(schemaVer)
 //  lazy val qualifier = EdgeQualifier(orders, VertexId.toTargetVertexId(tgtVertex.id), op)(label.schemaVersion)
 //  lazy val value = EdgeValue(metas.toList)(label.schemaVersion)

@@ -87,42 +87,43 @@ object InnerVal extends HBaseDeserializable {
                 len: Int,
                 version: String = DEFAULT_VERSION): InnerValLike = {
     version match {
+      case VERSION3 => v2.InnerVal.fromBytes(bytes, offset, len, version)
       case VERSION2 => v2.InnerVal.fromBytes(bytes, offset, len, version)
       case VERSION1 => v1.InnerVal.fromBytes(bytes, offset, len, version)
-//      case _ => throw notSupportedEx(version)
-      case _ => v2.InnerVal.fromBytes(bytes, offset, len, version)
+      case _ => throw notSupportedEx(version)
     }
   }
 
   def withLong(l: Long, version: String): InnerValLike = {
     version match {
+      case VERSION3 => v2.InnerVal(BigDecimal(l))
       case VERSION2 => v2.InnerVal(BigDecimal(l))
       case VERSION1 => v1.InnerVal(Some(l), None, None)
-//      case _ => throw notSupportedEx(version)
-      case _ => v2.InnerVal(BigDecimal(l))
+      case _ => throw notSupportedEx(version)
     }
   }
 
   def withInt(i: Int, version: String): InnerValLike = {
     version match {
+      case VERSION3 => v2.InnerVal(BigDecimal(i))
       case VERSION2 => v2.InnerVal(BigDecimal(i))
       case VERSION1 => v1.InnerVal(Some(i.toLong), None, None)
-//      case _ => throw notSupportedEx(version)
-      case _ => v2.InnerVal(BigDecimal(i))
+      case _ => throw notSupportedEx(version)
     }
   }
 
   def withFloat(f: Float, version: String): InnerValLike = {
     version match {
+      case VERSION3 => v2.InnerVal(BigDecimal(f))
       case VERSION2 => v2.InnerVal(BigDecimal(f))
       case VERSION1 => v1.InnerVal(Some(f.toLong), None, None)
-//      case _ => throw notSupportedEx(version)
-      case _ => v2.InnerVal(BigDecimal(f))
+      case _ => throw notSupportedEx(version)
     }
   }
 
   def withDouble(d: Double, version: String): InnerValLike = {
     version match {
+      case VERSION3 => v2.InnerVal(BigDecimal(d))
       case VERSION2 => v2.InnerVal(BigDecimal(d))
       case VERSION1 => v1.InnerVal(Some(d.toLong), None, None)
 //      case _ => throw notSupportedEx(version)
@@ -132,52 +133,65 @@ object InnerVal extends HBaseDeserializable {
 
   def withNumber(num: BigDecimal, version: String): InnerValLike = {
     version match {
+      case VERSION3 => v2.InnerVal(num)
       case VERSION2 => v2.InnerVal(num)
       case VERSION1 => v1.InnerVal(Some(num.toLong), None, None)
-//      case _ => throw notSupportedEx(version)
-      case _ => v2.InnerVal(num)
+      case _ => throw notSupportedEx(version)
     }
   }
 
   def withBoolean(b: Boolean, version: String): InnerValLike = {
     version match {
+      case VERSION3 => v2.InnerVal(b)
       case VERSION2 => v2.InnerVal(b)
       case VERSION1 => v1.InnerVal(None, None, Some(b))
-//      case _ => throw notSupportedEx(version)
-      case _ => v2.InnerVal(b)
+      case _ => throw notSupportedEx(version)
     }
   }
 
   def withBlob(blob: Array[Byte], version: String): InnerValLike = {
     version match {
+      case VERSION3 => v2.InnerVal(blob)
       case VERSION2 => v2.InnerVal(blob)
-//      case _ => throw notSupportedEx(version)
-      case _ => v2.InnerVal(blob)
+      case _ => throw notSupportedEx(version)
     }
   }
 
   def withStr(s: String, version: String): InnerValLike = {
     version match {
+      case VERSION3 => v2.InnerVal(s)
       case VERSION2 => v2.InnerVal(s)
       case VERSION1 => v1.InnerVal(None, Some(s), None)
-//      case _ => throw notSupportedEx(version)
-      case _ => v2.InnerVal(s)
+      case _ => throw notSupportedEx(version)
+
     }
   }
 
   def withInnerVal(innerVal: InnerValLike, version: String): InnerValLike = {
     val bytes = innerVal.bytes
     version match {
+      case VERSION3 => v2.InnerVal.fromBytes(bytes, 0, bytes.length, version)
       case VERSION2 => v2.InnerVal.fromBytes(bytes, 0, bytes.length, version)
       case VERSION1 => v1.InnerVal.fromBytes(bytes, 0, bytes.length, version)
-//      case _ => throw notSupportedEx(version)
-      case _ => v2.InnerVal.fromBytes(bytes, 0, bytes.length, version)
+      case _ => throw notSupportedEx(version)
     }
   }
 
   /** nasty implementation for backward compatability */
   def convertVersion(innerVal: InnerValLike, dataType: String, toVersion: String): InnerValLike = {
     val ret = toVersion match {
+      case VERSION3 =>
+        if (innerVal.isInstanceOf[v1.InnerVal]) {
+          val obj = innerVal.asInstanceOf[v1.InnerVal]
+          obj.valueType match {
+            case "long" => InnerVal.withLong(obj.longV.get, toVersion)
+            case "string" => InnerVal.withStr(obj.strV.get, toVersion)
+            case "boolean" => InnerVal.withBoolean(obj.boolV.get, toVersion)
+            case _ => throw new Exception(s"InnerVal should be [long/integeer/short/byte/string/boolean]")
+          }
+        } else {
+          innerVal
+        }
       case VERSION2 =>
         if (innerVal.isInstanceOf[v1.InnerVal]) {
           val obj = innerVal.asInstanceOf[v1.InnerVal]
@@ -202,19 +216,7 @@ object InnerVal extends HBaseDeserializable {
         } else {
           innerVal
         }
-//      case _ => throw notSupportedEx(toVersion)
-      case _ =>
-        if (innerVal.isInstanceOf[v1.InnerVal]) {
-          val obj = innerVal.asInstanceOf[v1.InnerVal]
-          obj.valueType match {
-            case "long" => InnerVal.withLong(obj.longV.get, toVersion)
-            case "string" => InnerVal.withStr(obj.strV.get, toVersion)
-            case "boolean" => InnerVal.withBoolean(obj.boolV.get, toVersion)
-            case _ => throw new Exception(s"InnerVal should be [long/integeer/short/byte/string/boolean]")
-          }
-        } else {
-          innerVal
-        }
+      case _ => throw notSupportedEx(toVersion)
     }
 //    Logger.debug(s"convertVersion: $innerVal, $dataType, $toVersion, $ret, ${innerVal.bytes.toList}, ${ret.bytes.toList}")
     ret

@@ -104,6 +104,7 @@ class RankParam(val labelId: Int, var keySeqAndWeights: Seq[(Byte, Double)] = Se
 object QueryParam {
   lazy val empty = QueryParam(LabelWithDirection(0, 0))
 }
+
 case class QueryParam(labelWithDir: LabelWithDirection, timestamp: Long = System.currentTimeMillis()) {
 
   import Query.DuplicatePolicy._
@@ -146,6 +147,9 @@ case class QueryParam(labelWithDir: LabelWithDirection, timestamp: Long = System
   var tgtVertexInnerIdOpt: Option[InnerValLike] = None
   var cacheTTLInMillis: Long = -1L
 
+  var from: Seq[(Byte, InnerValLike)] = Seq.empty
+  var to: Seq[(Byte, InnerValLike)] = Seq.empty
+
   def isRowKeyOnly(isRowKeyOnly: Boolean): QueryParam = {
     this.isRowKeyOnly = isRowKeyOnly
     this
@@ -171,28 +175,38 @@ case class QueryParam(labelWithDir: LabelWithDirection, timestamp: Long = System
 
   def interval(fromTo: Option[(Seq[(Byte, InnerValLike)], Seq[(Byte, InnerValLike)])]): QueryParam = {
     fromTo match {
-      case Some((from, to)) => interval(from, to)
+      case Some((from, to)) =>
+        this.from = from
+        this.to = to
+        interval(from, to)
       case _ => this
     }
   }
 
-  def interval(from: Seq[(Byte, InnerValLike)], to: Seq[(Byte, InnerValLike)]): QueryParam = {
-    import types2.HBaseDeserializable._
-    //    val len = label.orderTypes.size.toByte
-    //    val len = label.extraIndicesMap(labelOrderSeq).sortKeyTypes.size.toByte
-    //    Logger.error(s"indicesMap: ${label.indicesMap(labelOrderSeq)}")
+  private def startKeyAndStopKey(from: Seq[(Byte, InnerValLike)], to: Seq[(Byte, InnerValLike)]) = {
     val len = label.indicesMap(labelOrderSeq).sortKeyTypes.size.toByte
-
-    val minMetaByte = InnerVal.minMetaByte
-    val maxMetaByte = InnerVal.maxMetaByte
-    val toVal = Bytes.add(propsToBytes(to), Array.fill(1)(minMetaByte))
-    val fromVal = Bytes.add(propsToBytes(from), Array.fill(1)(maxMetaByte))
+    import types2.HBaseDeserializable._
+    /**
+     * In natural order
+     * -129, -128 , -2, -1 < 0 < 1, 2, 127, 128
+     *
+     * In byte order
+     * 0 < 1, 2, 127, 128 < -129, -128, -2, -1
+     *
+     */
+    val toVal = Bytes.add(propsToBytes(to), Array.fill(1)(0))
+    val fromVal = Bytes.add(propsToBytes(from), Array.fill(1)(-1))
     toVal(0) = len
     fromVal(0) = len
     val maxBytes = fromVal
     val minBytes = toVal
+    (minBytes, maxBytes)
+  }
+
+  def interval(from: Seq[(Byte, InnerValLike)], to: Seq[(Byte, InnerValLike)]): QueryParam = {
+    val (minBytes, maxBytes) = startKeyAndStopKey(from, to)
     val rangeFilter = new ColumnRangeFilter(minBytes, true, maxBytes, true)
-    Logger.debug(s"index length: $len, min: ${minBytes.toList}, max: ${maxBytes.toList}")
+
     //    queryLogger.info(s"Interval: ${rangeFilter.getMinColumn().toList} ~ ${rangeFilter.getMaxColumn().toList}: ${Bytes.compareTo(minBytes, maxBytes)}")
     //    this.filters.(rangeFilter)
     this.columnRangeFilter = rangeFilter
@@ -265,22 +279,83 @@ case class QueryParam(labelWithDir: LabelWithDirection, timestamp: Long = System
     this.tgtVertexInnerIdOpt = other
     this
   }
+
   def cacheTTLInMillis(other: Long): QueryParam = {
     this.cacheTTLInMillis = other
     this
   }
+
   override def toString(): String = {
     List(label.label, labelOrderSeq, offset, limit, rank, isRowKeyOnly,
       duration, isInverted, exclude, include, hasFilters, outputField).mkString("\t")
   }
 
 
+  def buildScanRequest(srcVertex: Vertex) = {
+    val (srcColumn, tgtColumn) =
+      if (labelWithDir.dir == GraphUtil.directions("in") && label.isDirected) (label.tgtColumn, label.srcColumn)
+      else (label.srcColumn, label.tgtColumn)
+    val (srcInnerId, tgtInnerId) =
+    //FIXME
+      if (labelWithDir.dir == GraphUtil.directions("in") && tgtVertexInnerIdOpt.isDefined && label.isDirected) {
+        // need to be swap src, tgt
+        val tgtVertexInnerId = tgtVertexInnerIdOpt.get
+        (InnerVal.convertVersion(tgtVertexInnerId, srcColumn.columnType, label.schemaVersion),
+          InnerVal.convertVersion(srcVertex.innerId, tgtColumn.columnType, label.schemaVersion))
+      } else {
+        val tgtVertexId = srcVertex.id
+        (InnerVal.convertVersion(srcVertex.innerId, tgtColumn.columnType, label.schemaVersion),
+          InnerVal.convertVersion(tgtVertexId.innerId, srcColumn.columnType, label.schemaVersion))
+      }
+    val (srcVId, tgtVId) =
+      (SourceVertexId(srcColumn.id.get, srcInnerId), TargetVertexId(tgtColumn.id.get, tgtInnerId))
+    val (srcV, tgtV) = (Vertex(srcVId), Vertex(tgtVId))
+    val op = GraphUtil.operations("insert")
+    val ts = System.currentTimeMillis()
+
+    val props = Map.empty[Byte, InnerValLike]
+    val propsWithTs = Map.empty[Byte, InnerValLikeWithTs]
+
+    val (startKey, stopKey) = if (tgtVertexInnerIdOpt.isDefined) {
+      val edge = EdgeWithIndexInverted(srcV, tgtV, labelWithDir, op, ts, propsWithTs)
+      val (minBytes, maxBytes) = startKeyAndStopKey(this.from, this.to)
+      (Bytes.add(edge.startKey, minBytes), Bytes.add(edge.stopKey, maxBytes))
+    } else {
+      val edge = EdgeWithIndex(srcV, tgtV, labelWithDir, op, ts, labelOrderSeq, props)
+      val (minBytes, maxBytes) = startKeyAndStopKey(this.from, this.to)
+      (Bytes.add(edge.startKey, minBytes), Bytes.add(edge.stopKey, maxBytes))
+    }
+    val (minTs, maxTs) = duration.getOrElse((0L, Long.MaxValue))
+    val client = Graph.getClient(label.hbaseZkAddr)
+    val filters = ListBuffer.empty[ScanFilter]
+
+    val scan = client.newScanner(label.hbaseTableName)
+
+    Logger.debug(s"[StartKey]: ${startKey.toList}")
+    Logger.debug(s"[StopKey]: ${stopKey.toList}")
+    scan.setStartKey(startKey)
+//    scan.setStopKey(stopKey)
+
+
+
+
+    scan.setMaxVersions(1)
+    scan.setFamily(edgeCf)
+    scan.setMaxNumKeyValues(Byte.MaxValue)
+    scan.setTimeRange(minTs, maxTs)
+    scan.setMaxNumRows(limit)
+    //        scan.setFilter()
+    Logger.debug(s"[Scanner]: $scan")
+    scan
+
+  }
+
   def buildGetRequest(srcVertex: Vertex) = {
     val (srcColumn, tgtColumn) =
       if (labelWithDir.dir == GraphUtil.directions("in") && label.isDirected) (label.tgtColumn, label.srcColumn)
       else (label.srcColumn, label.tgtColumn)
     val (srcInnerId, tgtInnerId) =
-      //FIXME
+    //FIXME
       if (labelWithDir.dir == GraphUtil.directions("in") && tgtVertexInnerIdOpt.isDefined && label.isDirected) {
         // need to be swap src, tgt
         val tgtVertexInnerId = tgtVertexInnerIdOpt.get
@@ -319,7 +394,7 @@ case class QueryParam(labelWithDir: LabelWithDirection, timestamp: Long = System
     get.setMaxAttempt(maxAttempt.toByte)
     get.setRpcTimeout(rpcTimeoutInMillis)
     if (columnRangeFilter != null) get.filter(columnRangeFilter)
-    Logger.debug(s"$get")
+    Logger.debug(s"[GetRequest]: $get")
     get
   }
 }

@@ -68,6 +68,7 @@ GET    /graphs/getVertex/:serviceName/:columnName                              c
 GET    /graphs/testGetEdges/:label/:limit/:friendCntStep                       controllers.QueryController.testGetEdges(label, limit: Int, friendCntStep: Int)
 GET    /graphs/testGetEdges2/:label1/:limit1/:label2/:limit2                   controllers.QueryController.testGetEdges2(label1, limit1: Int, label2, limit2: Int)
 GET    /graphs/testGetEdges3/:label1/:limit1/:label2/:limit2/:label3/:limit3   controllers.QueryController.testGetEdges3(label1, limit1: Int, label2, limit2: Int, label3, limit3: Int)
+GET    /scannerTest                                                           controllers.TestController.scannerTest()
 
 # Map static resources from the /public folder to the /assets URL path
 GET    /images/*file                                                           controllers.Assets.at(path="/public/images", file)

@@ -190,7 +190,7 @@ object Graph {
     promise.future
   }
 
-  def deferredToFutureWithoutFallback[T](d: Deferred[T]) = {
+  def deferredToFutureWithoutFallback[T](d: Deferred[T]): Future[T] = {
     val promise = Promise[T]
     d.addBoth(new Callback[Unit, T] {
       def call(arg: T) = arg match {
@@ -237,7 +237,7 @@ object Graph {
         //TODO: register errorBacks on this operations to log error
         //          Logger.debug(s"$rpc")
         val defer = rpcs.map { rpc =>
-          //          Logger.debug(s"$rpc")
+                    Logger.debug(s"$rpc")
           val deferred = rpc match {
             case d: DeleteRequest => client.delete(d)
             case p: PutRequest => client.put(p)
@@ -302,19 +302,19 @@ object Graph {
 
 
 
-  private def fetchEdgesLs(currentStepRequestLss: Seq[(Iterable[(GetRequest, QueryParam)], Double)]): Seq[Deferred[QueryResult]] = {
+  private def fetchEdgesLs(currentStepRequestLss: Seq[(Iterable[(Object, QueryParam)], Double)]): Seq[Deferred[QueryResult]] = {
     for {
       (prevStepTgtVertexResultLs, prevScore) <- currentStepRequestLss
-      (getRequest, queryParam) <- prevStepTgtVertexResultLs
+      (fetchRequest, queryParam) <- prevStepTgtVertexResultLs if fetchRequest.isInstanceOf[GetRequest] || fetchRequest.isInstanceOf[Scanner]
     } yield {
       //      fetchEdges(getRequest, queryParam, prevScore)
-      fetchEdgesWithCache(getRequest, queryParam, prevScore)
+      fetchEdgesWithCache(fetchRequest, queryParam, prevScore)
     }
   }
 
 
-  private def fetchEdgesWithCache(getRequest: GetRequest, queryParam: QueryParam, prevScore: Double): Deferred[QueryResult] = {
-    val cacheKey = MurmurHash3.stringHash(getRequest.toString)
+  private def fetchEdgesWithCache(fetchRequest: Object, queryParam: QueryParam, prevScore: Double): Deferred[QueryResult] = {
+    val cacheKey = MurmurHash3.stringHash(fetchRequest.toString)
     def queryResultCallback(cacheKey: Int) = new Callback[QueryResult, QueryResult] {
       def call(arg: QueryResult): QueryResult = {
         Logger.debug(s"queryResultCachePut, $arg")
@@ -334,33 +334,51 @@ object Graph {
         else {
           cache.asMap().remove(cacheKey)
           Logger.debug(s"cacheHitInvalid: $cacheKey, $cacheTTL")
-          fetchEdges(getRequest, queryParam, prevScore).addBoth(queryResultCallback(cacheKey))
+          fetchEdges(fetchRequest, queryParam, prevScore).addBoth(queryResultCallback(cacheKey))
         }
       } else {
         Logger.debug(s"cacheMiss: $cacheKey")
-        fetchEdges(getRequest, queryParam, prevScore).addBoth(queryResultCallback(cacheKey))
+        fetchEdges(fetchRequest, queryParam, prevScore).addBoth(queryResultCallback(cacheKey))
       }
     } else {
       Logger.debug(s"cacheMiss: $cacheKey")
-      fetchEdges(getRequest, queryParam, prevScore)
+      fetchEdges(fetchRequest, queryParam, prevScore)
     }
   }
 
 
 
   /** actual request to HBase */
-  private def fetchEdges(getRequest: GetRequest, queryParam: QueryParam,
+  private def fetchEdges(fetchRequest: Object, queryParam: QueryParam,
                          prevScore: Double, isSnapshotEdge: Boolean = false): Deferred[QueryResult] = {
     try {
       val client = getClient(queryParam.label.hbaseZkAddr)
       /** now hbase result should be ArrayList[ArrayList[KeyValue]] */
-      val deferred = client.get(getRequest).addCallback(new Callback[ArrayList[ArrayList[KeyValue]], ArrayList[KeyValue]] {
-        def call(row: ArrayList[KeyValue]): ArrayList[ArrayList[KeyValue]] = {
-          val rows = new ArrayList[ArrayList[KeyValue]]()
-          rows.add(row)
-          rows
-        }
-      })
+      val deferred = fetchRequest match {
+        case get: GetRequest =>
+          client.get(get).addCallback(new Callback[ArrayList[ArrayList[KeyValue]], ArrayList[KeyValue]] {
+            def call(row: ArrayList[KeyValue]): ArrayList[ArrayList[KeyValue]] = {
+              val rows = new ArrayList[ArrayList[KeyValue]]()
+              rows.add(row)
+              rows
+            }
+          })
+        case scanner: Scanner =>
+          scanner.nextRows().addCallback(new Callback[ArrayList[ArrayList[KeyValue]], ArrayList[ArrayList[KeyValue]]]{
+            def call(rows: ArrayList[ArrayList[KeyValue]]): ArrayList[ArrayList[KeyValue]] = {
+              Logger.debug(s"$rows")
+              scanner.close()
+              if (rows == null || rows.isEmpty) emptyKVlist
+              else rows
+            }
+          }).addErrback(new Callback[ArrayList[ArrayList[KeyValue]], Exception]{
+            def call(e: Exception): ArrayList[ArrayList[KeyValue]] = {
+              scanner.close()
+              Logger.error(s"Exception on deferred: $e", e)
+              emptyKVlist
+            }
+          })
+      }
 
       deferredCallbackWithFallback(deferred)({ rows =>
         val edgeWithScores = for {
@@ -463,18 +481,22 @@ object Graph {
   }
 
 
-  def buildGetRequests(startVertices: Seq[(Vertex, Double)], params: List[QueryParam]): Seq[(Iterable[(GetRequest, QueryParam)], Double)] = {
+  def buildGetRequests(startVertices: Seq[(Vertex, Double)], params: List[QueryParam]): Seq[(Iterable[(Object, QueryParam)], Double)] = {
     for {
       (vertex, score) <- startVertices
     } yield {
       val requests = for {
         param <- params
       } yield {
-          (param.buildGetRequest(vertex), param)
+          param.label.schemaVersion match {
+            case InnerVal.VERSION3 => (param.buildScanRequest(vertex), param)
+            case _ => (param.buildGetRequest(vertex), param)
+          }
         }
       (requests, score)
     }
   }
+
 
 
   def convertEdge(edge: Edge, labelOutputFields: Map[Int, Byte]): Option[Edge] = {
