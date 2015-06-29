@@ -291,21 +291,22 @@ case class QueryParam(labelWithDir: LabelWithDirection, timestamp: Long = System
   }
 
 
-  def buildScanRequest(srcVertex: Vertex) = {
+  def buildScanRequest(srcVertex: Vertex, tgtVertexOpt: Option[Vertex] = None) = {
+
     val (srcColumn, tgtColumn) =
       if (labelWithDir.dir == GraphUtil.directions("in") && label.isDirected) (label.tgtColumn, label.srcColumn)
       else (label.srcColumn, label.tgtColumn)
     val (srcInnerId, tgtInnerId) =
     //FIXME
-      if (labelWithDir.dir == GraphUtil.directions("in") && tgtVertexInnerIdOpt.isDefined && label.isDirected) {
+      if (labelWithDir.dir == GraphUtil.directions("in") && tgtVertexOpt.isDefined && label.isDirected) {
         // need to be swap src, tgt
-        val tgtVertexInnerId = tgtVertexInnerIdOpt.get
+        val tgtVertexInnerId = tgtVertexOpt.get.innerId
         (InnerVal.convertVersion(tgtVertexInnerId, srcColumn.columnType, label.schemaVersion),
           InnerVal.convertVersion(srcVertex.innerId, tgtColumn.columnType, label.schemaVersion))
       } else {
-        val tgtVertexId = srcVertex.id
+        val tgtVertexInnerId = tgtVertexOpt.map(t => t.innerId).getOrElse(srcVertex.innerId)
         (InnerVal.convertVersion(srcVertex.innerId, tgtColumn.columnType, label.schemaVersion),
-          InnerVal.convertVersion(tgtVertexId.innerId, srcColumn.columnType, label.schemaVersion))
+          InnerVal.convertVersion(tgtVertexInnerId, srcColumn.columnType, label.schemaVersion))
       }
     val (srcVId, tgtVId) =
       (SourceVertexId(srcColumn.id.get, srcInnerId), TargetVertexId(tgtColumn.id.get, tgtInnerId))
@@ -315,16 +316,17 @@ case class QueryParam(labelWithDir: LabelWithDirection, timestamp: Long = System
 
     val props = Map.empty[Byte, InnerValLike]
     val propsWithTs = Map.empty[Byte, InnerValLikeWithTs]
-
-    val (startKey, stopKey) = if (tgtVertexInnerIdOpt.isDefined) {
-      val edge = EdgeWithIndexInverted(srcV, tgtV, labelWithDir, op, ts, propsWithTs)
-      val (minBytes, maxBytes) = startKeyAndStopKey(this.from, this.to)
-      (Bytes.add(edge.startKey, minBytes), Bytes.add(edge.stopKey, maxBytes))
-    } else {
-      val edge = EdgeWithIndex(srcV, tgtV, labelWithDir, op, ts, labelOrderSeq, props)
-      val (minBytes, maxBytes) = startKeyAndStopKey(this.from, this.to)
-      (Bytes.add(edge.startKey, minBytes), Bytes.add(edge.stopKey, maxBytes))
-    }
+    Logger.debug(s"[buildScanRequest]: $srcV, $tgtV, $labelWithDir, $op, $ts, $propsWithTs")
+    val (startKey, stopKey) =
+      if (tgtVertexOpt.isDefined) {
+        val edge = EdgeWithIndexInverted(srcV, tgtV, labelWithDir, op, ts, propsWithTs)
+        val keyValue = edge.keyValues.head
+        (keyValue.key, Bytes.add(keyValue.key(), Array[Byte](-1)))
+      } else {
+        val edge = EdgeWithIndex(srcV, tgtV, labelWithDir, op, ts, labelOrderSeq, props)
+        val (minBytes, maxBytes) = startKeyAndStopKey(this.from, this.to)
+        (Bytes.add(edge.startKey, minBytes), Bytes.add(edge.stopKey, maxBytes))
+      }
     val (minTs, maxTs) = duration.getOrElse((0L, Long.MaxValue))
     val client = Graph.getClient(label.hbaseZkAddr)
     val filters = ListBuffer.empty[ScanFilter]

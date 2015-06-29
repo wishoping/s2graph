@@ -30,11 +30,11 @@ case class EdgeWithIndexInverted(srcVertex: Vertex,
   lazy val isInverted = true
   lazy val lastModifiedAt = if (props.isEmpty) 0L else props.map(_._2.ts).max
   lazy val schemaVer = label.schemaVersion
-//  lazy val rowKey = EdgeRowKey(VertexId.toSourceVertexId(srcVertex.id),
-//    labelWithDir, LabelIndex.defaultSeq, isInverted = true)(version = schemaVer)
-//
-//  lazy val qualifier = EdgeQualifierInverted(VertexId.toTargetVertexId(tgtVertex.id))(version = schemaVer)
-//  lazy val value = EdgeValueInverted(op, props.toList)(version = schemaVer)
+  //  lazy val rowKey = EdgeRowKey(VertexId.toSourceVertexId(srcVertex.id),
+  //    labelWithDir, LabelIndex.defaultSeq, isInverted = true)(version = schemaVer)
+  //
+  //  lazy val qualifier = EdgeQualifierInverted(VertexId.toTargetVertexId(tgtVertex.id))(version = schemaVer)
+  //  lazy val value = EdgeValueInverted(op, props.toList)(version = schemaVer)
 
   // only for toString.
   lazy val label = Label.findById(labelWithDir.labelId)
@@ -104,7 +104,7 @@ case class EdgeWithIndex(srcVertex: Vertex,
     meta.seq -> innerVal
   }).toMap
   lazy val labelIndexMetaSeqs = labelIndex.metaSeqs
-  lazy val propsWithTs = props.map { case (k, v) => k -> InnerValLikeWithTs(v, ts)}
+  lazy val propsWithTs = props.map { case (k, v) => k -> InnerValLikeWithTs(v, ts) }
 
 
   /** TODO: make sure call of this class fill props as this assumes */
@@ -136,9 +136,9 @@ case class EdgeWithIndex(srcVertex: Vertex,
   lazy val keyValues = GraphStorable.toKeyValue(this)
   lazy val startKey = GraphStorable.startKey(this)
   lazy val stopKey = GraphStorable.stopKey(this)
-//  lazy val rowKey = EdgeRowKey(VertexId.toSourceVertexId(srcVertex.id), labelWithDir, labelIndexSeq, isInverted = false)(schemaVer)
-//  lazy val qualifier = EdgeQualifier(orders, VertexId.toTargetVertexId(tgtVertex.id), op)(label.schemaVersion)
-//  lazy val value = EdgeValue(metas.toList)(label.schemaVersion)
+  //  lazy val rowKey = EdgeRowKey(VertexId.toSourceVertexId(srcVertex.id), labelWithDir, labelIndexSeq, isInverted = false)(schemaVer)
+  //  lazy val qualifier = EdgeQualifier(orders, VertexId.toTargetVertexId(tgtVertex.id), op)(label.schemaVersion)
+  //  lazy val value = EdgeValue(metas.toList)(label.schemaVersion)
 
   lazy val hasAllPropsForIndex = orders.length == labelIndexMetaSeqs.length
 
@@ -151,7 +151,7 @@ case class EdgeWithIndex(srcVertex: Vertex,
         keyValue <- keyValues
       } yield {
         val put = new Put(keyValue.key)
-        put.addColumn(edgeCf, keyValue.qualifier, keyValue.timestamp, keyValue.value)
+        put.addColumn(edgeCf, keyValue.qualifier, ts, keyValue.value)
       }
     }
   }
@@ -165,7 +165,7 @@ case class EdgeWithIndex(srcVertex: Vertex,
         keyValue <- keyValues
       } yield {
         new PutRequest(label.hbaseTableName.getBytes,
-          keyValue.key, edgeCf, keyValue.qualifier, keyValue.value, keyValue.timestamp)
+          keyValue.key, edgeCf, keyValue.qualifier, keyValue.value, ts)
       }
     }
   }
@@ -201,7 +201,7 @@ case class EdgeWithIndex(srcVertex: Vertex,
         keyValue <- keyValues
       } yield {
         val delete = new Delete(keyValue.key)
-        delete.addColumns(edgeCf, keyValue.qualifier, keyValue.timestamp)
+        delete.addColumns(edgeCf, keyValue.qualifier, ts)
       }
     }
   }
@@ -213,7 +213,7 @@ case class EdgeWithIndex(srcVertex: Vertex,
         keyValue <- keyValues
       } yield {
         new DeleteRequest(label.hbaseTableName.getBytes,
-          keyValue.key, edgeCf, keyValue.qualifier, keyValue.timestamp)
+          keyValue.key, edgeCf, keyValue.qualifier, ts)
       }
     }
   }
@@ -481,6 +481,7 @@ case class Edge(srcVertex: Vertex,
         case None => Array.empty[Byte]
         case Some(kv) => kv.value
       }
+      Logger.debug(s"compareAndSet: $newPut -> ${oldVal.toList}")
       Graph.defferedToFuture(client.compareAndSet(newPut, oldVal))(false)
     }
 
@@ -644,7 +645,7 @@ object Edge extends JSONParser {
   val minOperationTs = 1L
   val minTsVal = 0L
   // FIXME:
-  val maxTryNum = 10
+  val maxTryNum = 2
   /** now version information is required also **/
   type PropsPairWithTs = (Map[Byte, InnerValLikeWithTs], Map[Byte, InnerValLikeWithTs], Long, String)
 
@@ -744,15 +745,14 @@ object Edge extends JSONParser {
 
     val deleteMutations = edgesToDelete.flatMap(edge => edge.buildDeletesAsync)
     val insertMutations = edgesToInsert.flatMap(edge => edge.buildPutsAsync)
-    val invertMutations = edgeInverted.map{ e => e.buildPutsAsync()}.getOrElse(Seq.empty).toList
+    val invertMutations = edgeInverted.map { e => e.buildPutsAsync() }.getOrElse(Seq.empty).toList
     val indexedEdgeMutations = deleteMutations ++ insertMutations
     val invertedEdgeMutations = invertMutations
 
     val update = EdgeUpdate(indexedEdgeMutations, invertedEdgeMutations, edgesToDelete, edgesToInsert, edgeInverted)
 
-    //        Logger.debug(s"UpdatedProps: ${newPropsWithTs}\n")
-    //        Logger.debug(s"EdgeUpdate: $update\n")
-    //    Logger.debug(s"$update")
+    Logger.debug(s"UpdatedProps: ${newPropsWithTs}\n")
+    Logger.debug(s"EdgeUpdate: $update\n")
     update
   }
 
@@ -907,109 +907,111 @@ object Edge extends JSONParser {
 
   def toEdge(kvs: Seq[KeyValue], param: QueryParam, isSnapshotEdge: Boolean = false): Option[Edge] = {
     kvs.foreach(kv => Logger.debug(s"toEdge: $param -> $kv"))
+
     /** degree edge is not considered yet */
-//    if (kv.qualifier().isEmpty) None
-//    else {
+    //    if (kv.qualifier().isEmpty) None
+    //    else {
     if (kvs.isEmpty) None
     else {
       if (isSnapshotEdge) GraphStorable.toSnapshotEdge(kvs, param)
       else GraphStorable.toIndexedEdge(kvs, param)
     }
   }
-//
-//    val version = kv.timestamp()
-//    val keyBytes = kv.key()
-//    val rowKey = EdgeRowKey.fromBytes(keyBytes, 0, keyBytes.length, param.label.schemaVersion)
-//    val srcVertexId = rowKey.srcVertexId
-//    var isDegree = false
-//    val (tgtVertexId, props, op, ts) = rowKey.isInverted match {
-//      case true =>
-//        val qBytes = kv.qualifier()
-//        val vBytes = kv.value()
-//        val qualifier = EdgeQualifierInverted.fromBytes(qBytes, 0, qBytes.length, param.label.schemaVersion)
-//        val value = EdgeValueInverted.fromBytes(vBytes, 0, vBytes.length, param.label.schemaVersion)
-//        val kvsMap = value.props.toMap
-//        val ts = kvsMap.get(LabelMeta.timeStampSeq) match {
-//          case None => version
-//          case Some(v) => BigDecimal(v.innerVal.toString).toLong
-//        }
-//        (qualifier.tgtVertexId, kvsMap, value.op, ts)
-//      case false =>
-//        val kvQual = kv.qualifier()
-//        val vBytes = kv.value()
-//        if (kvQual.length == 0) {
-//          /** degree */
-//          isDegree = true
-//          val degree = Bytes.toLong(kv.value())
-//          //FIXME: dirty hack. dummy target vertexId
-//          val ts = kv.timestamp()
-//          val dummyProps = Map(LabelMeta.degreeSeq -> InnerValLikeWithTs.withLong(degree, ts, param.label.schemaVersion))
-//          val tgtVertexId = VertexId(VertexId.DEFAULT_COL_ID, InnerVal.withStr("0", param.label.schemaVersion))
-//          (tgtVertexId, dummyProps, GraphUtil.operations("insert"), ts)
-//        } else {
-//          /** edge */
-//          val qualifier = EdgeQualifier.fromBytes(kvQual, 0, kvQual.length, param.label.schemaVersion)
-//          val value = EdgeValue.fromBytes(vBytes, 0, vBytes.length, param.label.schemaVersion)
-//
-//          val index = param.label.indicesMap.get(rowKey.labelOrderSeq).getOrElse(
-//            throw new RuntimeException(s"can`t find index sequence for $rowKey ${param.label}"))
-//
-//          val kvs = qualifier.propsKVs(index.metaSeqs) ::: value.props.toList
-//          val kvsMap = kvs.toMap
-//          val tgtVertexId = if (qualifier.tgtVertexId == null) {
-//            kvsMap.get(LabelMeta.toSeq) match {
-//              case None => qualifier.tgtVertexId
-//              case Some(vId) => TargetVertexId(VertexId.DEFAULT_COL_ID, vId)
-//            }
-//          } else {
-//            qualifier.tgtVertexId
-//          }
-//
-//          val ts = kvsMap.get(LabelMeta.timeStampSeq).map { v => BigDecimal(v.value.toString).toLong }.getOrElse(version)
-//          val mergedProps = kvsMap.map { case (k, innerVal) => k -> InnerValLikeWithTs(innerVal, ts) }
-//          (tgtVertexId, mergedProps, qualifier.op, ts)
-//        }
-//    }
-//    if (!param.includeDegree && isDegree) {
-//      None
-//    } else {
-//      val edge =
-////        if (!param.label.isDirected && param.labelWithDir.dir == GraphUtil.directions("in")) {
-////          Edge(Vertex(srcVertexId, ts), Vertex(tgtVertexId, ts), rowKey.labelWithDir.updateDir(0), op, ts, version, props)
-////        } else {
-//          Edge(Vertex(srcVertexId, ts), Vertex(tgtVertexId, ts), rowKey.labelWithDir, op, ts, version, props)
-////        }
-//
-//      //          Logger.debug(s"toEdge: $srcVertexId, $tgtVertexId, $props, $op, $ts")
-//      val labelMetas = LabelMeta.findAllByLabelId(rowKey.labelWithDir.labelId)
-//      val propsWithDefault = (for (meta <- labelMetas) yield {
-//        props.get(meta.seq) match {
-//          case Some(v) => (meta.seq -> v)
-//          case None =>
-//            val defaultInnerVal = toInnerVal(meta.defaultValue, meta.dataType, param.label.schemaVersion)
-//            (meta.seq -> InnerValLikeWithTs(defaultInnerVal, minTsVal))
-//        }
-//      }).toMap
-//      /**
-//       * TODO: backward compatability only. deprecate has field
-//       */
-//      val matches =
-//        for {
-//          (k, v) <- param.hasFilters
-//          edgeVal <- propsWithDefault.get(k) if edgeVal.innerVal == v
-//        } yield (k -> v)
-//      val ret = if (matches.size == param.hasFilters.size && param.where.map(_.filter(edge)).getOrElse(true)) {
-//        //      val edge = Edge(Vertex(srcVertexId, ts), Vertex(tgtVertexId, ts), rowKey.labelWithDir, op, ts, version, props)
-//        //              Logger.debug(s"fetchedEdge: $edge")
-//        Some(edge)
-//      } else {
-//        None
-//      }
-//      //    Logger.debug(s"$edge")
-//      //    Logger.debug(s"${cell.getQualifier().toList}, ${ret.map(x => x.toStringRaw)}")
-//      ret
-//    }
-//  }
+
+  //
+  //    val version = kv.timestamp()
+  //    val keyBytes = kv.key()
+  //    val rowKey = EdgeRowKey.fromBytes(keyBytes, 0, keyBytes.length, param.label.schemaVersion)
+  //    val srcVertexId = rowKey.srcVertexId
+  //    var isDegree = false
+  //    val (tgtVertexId, props, op, ts) = rowKey.isInverted match {
+  //      case true =>
+  //        val qBytes = kv.qualifier()
+  //        val vBytes = kv.value()
+  //        val qualifier = EdgeQualifierInverted.fromBytes(qBytes, 0, qBytes.length, param.label.schemaVersion)
+  //        val value = EdgeValueInverted.fromBytes(vBytes, 0, vBytes.length, param.label.schemaVersion)
+  //        val kvsMap = value.props.toMap
+  //        val ts = kvsMap.get(LabelMeta.timeStampSeq) match {
+  //          case None => version
+  //          case Some(v) => BigDecimal(v.innerVal.toString).toLong
+  //        }
+  //        (qualifier.tgtVertexId, kvsMap, value.op, ts)
+  //      case false =>
+  //        val kvQual = kv.qualifier()
+  //        val vBytes = kv.value()
+  //        if (kvQual.length == 0) {
+  //          /** degree */
+  //          isDegree = true
+  //          val degree = Bytes.toLong(kv.value())
+  //          //FIXME: dirty hack. dummy target vertexId
+  //          val ts = kv.timestamp()
+  //          val dummyProps = Map(LabelMeta.degreeSeq -> InnerValLikeWithTs.withLong(degree, ts, param.label.schemaVersion))
+  //          val tgtVertexId = VertexId(VertexId.DEFAULT_COL_ID, InnerVal.withStr("0", param.label.schemaVersion))
+  //          (tgtVertexId, dummyProps, GraphUtil.operations("insert"), ts)
+  //        } else {
+  //          /** edge */
+  //          val qualifier = EdgeQualifier.fromBytes(kvQual, 0, kvQual.length, param.label.schemaVersion)
+  //          val value = EdgeValue.fromBytes(vBytes, 0, vBytes.length, param.label.schemaVersion)
+  //
+  //          val index = param.label.indicesMap.get(rowKey.labelOrderSeq).getOrElse(
+  //            throw new RuntimeException(s"can`t find index sequence for $rowKey ${param.label}"))
+  //
+  //          val kvs = qualifier.propsKVs(index.metaSeqs) ::: value.props.toList
+  //          val kvsMap = kvs.toMap
+  //          val tgtVertexId = if (qualifier.tgtVertexId == null) {
+  //            kvsMap.get(LabelMeta.toSeq) match {
+  //              case None => qualifier.tgtVertexId
+  //              case Some(vId) => TargetVertexId(VertexId.DEFAULT_COL_ID, vId)
+  //            }
+  //          } else {
+  //            qualifier.tgtVertexId
+  //          }
+  //
+  //          val ts = kvsMap.get(LabelMeta.timeStampSeq).map { v => BigDecimal(v.value.toString).toLong }.getOrElse(version)
+  //          val mergedProps = kvsMap.map { case (k, innerVal) => k -> InnerValLikeWithTs(innerVal, ts) }
+  //          (tgtVertexId, mergedProps, qualifier.op, ts)
+  //        }
+  //    }
+  //    if (!param.includeDegree && isDegree) {
+  //      None
+  //    } else {
+  //      val edge =
+  ////        if (!param.label.isDirected && param.labelWithDir.dir == GraphUtil.directions("in")) {
+  ////          Edge(Vertex(srcVertexId, ts), Vertex(tgtVertexId, ts), rowKey.labelWithDir.updateDir(0), op, ts, version, props)
+  ////        } else {
+  //          Edge(Vertex(srcVertexId, ts), Vertex(tgtVertexId, ts), rowKey.labelWithDir, op, ts, version, props)
+  ////        }
+  //
+  //      //          Logger.debug(s"toEdge: $srcVertexId, $tgtVertexId, $props, $op, $ts")
+  //      val labelMetas = LabelMeta.findAllByLabelId(rowKey.labelWithDir.labelId)
+  //      val propsWithDefault = (for (meta <- labelMetas) yield {
+  //        props.get(meta.seq) match {
+  //          case Some(v) => (meta.seq -> v)
+  //          case None =>
+  //            val defaultInnerVal = toInnerVal(meta.defaultValue, meta.dataType, param.label.schemaVersion)
+  //            (meta.seq -> InnerValLikeWithTs(defaultInnerVal, minTsVal))
+  //        }
+  //      }).toMap
+  //      /**
+  //       * TODO: backward compatability only. deprecate has field
+  //       */
+  //      val matches =
+  //        for {
+  //          (k, v) <- param.hasFilters
+  //          edgeVal <- propsWithDefault.get(k) if edgeVal.innerVal == v
+  //        } yield (k -> v)
+  //      val ret = if (matches.size == param.hasFilters.size && param.where.map(_.filter(edge)).getOrElse(true)) {
+  //        //      val edge = Edge(Vertex(srcVertexId, ts), Vertex(tgtVertexId, ts), rowKey.labelWithDir, op, ts, version, props)
+  //        //              Logger.debug(s"fetchedEdge: $edge")
+  //        Some(edge)
+  //      } else {
+  //        None
+  //      }
+  //      //    Logger.debug(s"$edge")
+  //      //    Logger.debug(s"${cell.getQualifier().toList}, ${ret.map(x => x.toStringRaw)}")
+  //      ret
+  //    }
+  //  }
 
   //FIXME
   def buildIncrementDegreeBulk(srcVertexId: String, labelName: String, direction: String,
