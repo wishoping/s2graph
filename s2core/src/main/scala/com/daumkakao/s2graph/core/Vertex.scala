@@ -6,6 +6,7 @@ import com.daumkakao.s2graph.core.models._
 import com.daumkakao.s2graph.core.types2._
 import org.apache.hadoop.hbase.client.Put
 import org.apache.hadoop.hbase.client.Delete
+import org.apache.hadoop.hbase.util.Bytes
 import play.api.libs.json.Json
 import scala.collection.mutable.{HashMap, ListBuffer}
 import org.hbase.async.{DeleteRequest, HBaseRpc, PutRequest, GetRequest}
@@ -24,10 +25,12 @@ case class Vertex(id: VertexId,
   lazy val service = Service.findById(serviceColumn.serviceId)
   lazy val (hbaseZkAddr, hbaseTableName) = (service.cluster, service.hTableName)
 
-  lazy val rowKey = VertexRowKey(id)(schemaVer)
+  lazy val rowKey = id
   lazy val defaultProps = Map(ColumnMeta.lastModifiedAtColumnSeq.toInt -> InnerVal.withLong(ts, schemaVer))
   lazy val qualifiersWithValues =
-    for ((k, v) <- props ++ defaultProps) yield (VertexQualifier(k)(schemaVer), v)
+    for ((k, v) <- props ++ defaultProps)
+      yield (Array[Byte](k.toByte), v.bytes)
+//      yield (VertexQualifier(k)(schemaVer), v)
 
   /** TODO: make this as configurable */
   override lazy val serviceName = service.serviceName
@@ -44,7 +47,7 @@ case class Vertex(id: VertexId,
     //    play.api.Logger.error(s"put: $this => $rowKey")
     val put = new Put(rowKey.bytes)
     for ((q, v) <- qualifiersWithValues) {
-      put.addColumn(vertexCf, q.bytes, ts, v.bytes)
+      put.addColumn(vertexCf, q, ts, v)
     }
     List(put)
   }
@@ -53,8 +56,8 @@ case class Vertex(id: VertexId,
     val qualifiers = ListBuffer[Array[Byte]]()
     val values = ListBuffer[Array[Byte]]()
     for ((q, v) <- qualifiersWithValues) {
-      qualifiers += q.bytes
-      values += v.bytes
+      qualifiers += q
+      values += v
       //        new PutRequest(hbaseTableName.getBytes, rowKey.bytes, vertexCf, qualifier.bytes, v.bytes, ts)
     }
     val put = new PutRequest(hbaseTableName.getBytes, rowKey.bytes, vertexCf, qualifiers.toArray, values.toArray, ts)
@@ -143,7 +146,8 @@ object Vertex {
 
       val head = kvs.head
       val headBytes = head.key()
-      val rowKey = VertexRowKey.fromBytes(headBytes, 0, headBytes.length, version)
+      val id = VertexId.fromBytes(headBytes, 0, headBytes.length, version)
+//      val rowKey = VertexRowKey.fromBytes(headBytes, 0, headBytes.length, version)
 
       var maxTs = Long.MinValue
       /**
@@ -154,17 +158,15 @@ object Vertex {
       val props =
         for {
           kv <- kvs
-          kvQual = kv.qualifier()
-          qualifier = VertexQualifier.fromBytes(kvQual, 0, kvQual.length, version)
-          v = kv.value()
-          value = InnerVal.fromBytes(v, 0, v.length, version)
+          propKey = kv.qualifier().head
+          propVal = InnerVal.fromBytes(kv.value(), 0, kv.value.length, version)
           ts = kv.timestamp()
         } yield {
           if (ts > maxTs) maxTs = ts
-          (qualifier.propKey, value)
+          (propKey.toInt -> propVal)
         }
       assert(maxTs != Long.MinValue)
-      Some(Vertex(rowKey.id, maxTs, props.toMap))
+      Some(Vertex(id, maxTs, props.toMap))
     }
   }
 }
