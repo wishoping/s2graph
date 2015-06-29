@@ -381,7 +381,8 @@ class IntegritySpec extends Specification {
       for {
         label <- Label.findByName(labelName)
         direction <- List("out", "in")
-        cacheTTL <- List(1000L, 2000L)
+        cacheTTL <- List(-1)
+//        cacheTTL <- List(1000L, 2000L)
       } {
         val (serviceName, columnName, id, otherId) = direction match {
           case "out" => (label.srcService.serviceName, label.srcColumn.columnName, srcId, tgtId)

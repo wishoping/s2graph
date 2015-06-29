@@ -334,7 +334,7 @@ case class QueryParam(labelWithDir: LabelWithDirection, timestamp: Long = System
     Logger.debug(s"[StartKey]: ${startKey.toList}")
     Logger.debug(s"[StopKey]: ${stopKey.toList}")
     scan.setStartKey(startKey)
-//    scan.setStopKey(stopKey)
+    scan.setStopKey(stopKey)
 
 
 

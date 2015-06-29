@@ -906,7 +906,7 @@ object Edge extends JSONParser {
 
 
   def toEdge(kvs: Seq[KeyValue], param: QueryParam, isSnapshotEdge: Boolean = false): Option[Edge] = {
-    kvs.foreach(kv => Logger.debug(s"$param -> $kv"))
+    kvs.foreach(kv => Logger.debug(s"toEdge: $param -> $kv"))
     /** degree edge is not considered yet */
 //    if (kv.qualifier().isEmpty) None
 //    else {
