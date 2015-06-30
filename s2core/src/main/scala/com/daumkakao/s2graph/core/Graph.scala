@@ -448,12 +448,9 @@ object Graph {
     val invertedEdge = Edge(srcVertex, tgtVertex, queryParam.labelWithDir).toInvertedEdgeHashLike()
 
     Logger.debug(s"getEdge: ${srcVertex.innerId}, ${tgtVertex.innerId}, ${srcVertex.innerId.bytes.toList}, ${tgtVertex.innerId.bytes.toList}")
-    val fetchRequest = queryParam.label.schemaVersion match {
-      case InnerVal.VERSION3 =>
-        queryParam.buildScanRequest(srcVertex, Option(tgtVertex))
-      case _ =>
+    val fetchRequest =
         queryParam.tgtVertexInnerIdOpt(Option(tgtVertex.innerId)).buildGetRequest(srcVertex)
-    }
+
 //    val keyValue = invertedEdge.keyValues.head
 //    val qualifier = keyValue.qualifier
 //

@@ -185,6 +185,9 @@ case class EdgeWithIndex(srcVertex: Vertex,
       Logger.error(s"$this dont have all props for index")
       List.empty[AtomicIncrementRequest]
     } else {
+      //FIXME.
+      import GraphStorable._
+      val rowKey =
       for {
         keyValue <- keyValues
       } yield {
@@ -473,20 +476,18 @@ case class Edge(srcVertex: Vertex,
   def compareAndSet(client: HBaseClient)(invertedEdgeOpt: Option[Edge], edgeUpdate: EdgeUpdate): Future[Boolean] = {
     val oldVals = invertedEdgeOpt.map { old =>
       old.edgesWithInvertedIndex.keyValues.map { keyValue =>
-        Logger.error(s"${keyValue.qualifier().toList}, ${keyValue.value.toList}")
         keyValue.qualifier.toList -> keyValue
       }.toMap
     }.getOrElse(Map.empty)
 
     val futures = for {
       newPut <- edgeUpdate.invertedEdgeMutations
-      (oldVal, oldTs) = oldVals.get(newPut.qualifier().toList) match {
-        case None => (Array.empty[Byte], 0L)
-        case Some(kv) => (kv.value, kv.timestamp)
+      oldVal = oldVals.get(newPut.qualifier().toList) match {
+        case None => Array.empty[Byte]
+        case Some(kv) => kv.value
       }
-      if (oldTs < newPut.timestamp)
     } yield {
-        Logger.debug(s"compareAndSet: $newPut -> ${oldVal.toList}, ${oldTs}, ${newPut.qualifier.toList}")
+        Logger.debug(s"compareAndSet: $newPut -> ${oldVal.toList}, ${newPut.qualifier.toList}")
         Graph.defferedToFuture(client.compareAndSet(newPut, oldVal))(false)
       }
 
