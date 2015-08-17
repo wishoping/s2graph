@@ -61,7 +61,7 @@ object Label extends Model[Label] {
              hTableTTL: Option[Int],
              schemaVersion: String,
              isAsync: Boolean,
-             compressionAlgorithm: String) = {
+             compressionAlgorithm: String)(implicit dBSession: DBSession) = {
     sql"""
     	insert into labels(label,
     src_service_id, src_column_name, src_column_type,
@@ -142,35 +142,65 @@ object Label extends Model[Label] {
         val srcServiceId = srcService.id.get
         val tgtServiceId = tgtService.id.get
         val serviceId = service.id.get
+        val createdId = DB.localTx { implicit session =>
+          /** insert serviceColumn */
+          val srcCol = ServiceColumn.findOrInsert(srcServiceId, srcColumnName, Some(srcColumnType), schemaVersion)(session)
+          val tgtCol = ServiceColumn.findOrInsert(tgtServiceId, tgtColumnName, Some(tgtColumnType), schemaVersion)(session)
 
-        /** insert serviceColumn */
-        val srcCol = ServiceColumn.findOrInsert(srcServiceId, srcColumnName, Some(srcColumnType), schemaVersion)
-        val tgtCol = ServiceColumn.findOrInsert(tgtServiceId, tgtColumnName, Some(tgtColumnType), schemaVersion)
+          if (srcCol.columnType != srcColumnType) throw new RuntimeException(s"source service column type not matched ${srcCol.columnType} != ${srcColumnType}")
+          if (tgtCol.columnType != tgtColumnType) throw new RuntimeException(s"target service column type not matched ${tgtCol.columnType} != ${tgtColumnType}")
 
-        if (srcCol.columnType != srcColumnType) throw new RuntimeException(s"source service column type not matched ${srcCol.columnType} != ${srcColumnType}")
-        if (tgtCol.columnType != tgtColumnType) throw new RuntimeException(s"target service column type not matched ${tgtCol.columnType} != ${tgtColumnType}")
+          Label.findByName(labelName, useCache = false).getOrElse {
 
-        /** create label */
-        Label.findByName(labelName, useCache = false).getOrElse {
+            val createdId = insert(labelName, srcServiceId, srcColumnName, srcColumnType,
+              tgtServiceId, tgtColumnName, tgtColumnType, isDirected, serviceName, serviceId, consistencyLevel,
+              hTableName.getOrElse(service.hTableName), hTableTTL.orElse(service.hTableTTL), schemaVersion, isAsync, compressionAlgorithm)(session).toInt
 
-          val createdId = insert(labelName, srcServiceId, srcColumnName, srcColumnType,
-            tgtServiceId, tgtColumnName, tgtColumnType, isDirected, serviceName, serviceId, consistencyLevel,
-            hTableName.getOrElse(service.hTableName), hTableTTL.orElse(service.hTableTTL), schemaVersion, isAsync, compressionAlgorithm).toInt
+            val labelMetaMap = metaProps.map { case Prop(propName, defaultValue, dataType) =>
+              val labelMeta = LabelMeta.findOrInsert(createdId, propName, defaultValue, dataType)(session)
+              (propName -> labelMeta.seq)
+            }.toMap ++ Map(LabelMeta.timestamp.name -> LabelMeta.timestamp.seq)
 
-          val labelMetaMap = metaProps.map { case Prop(propName, defaultValue, dataType) =>
-            val labelMeta = LabelMeta.findOrInsert(createdId, propName, defaultValue, dataType)
-            (propName -> labelMeta.seq)
-          }.toMap ++ Map(LabelMeta.timestamp.name -> LabelMeta.timestamp.seq)
-
-          if (indices.isEmpty) { // make default index with _PK, _timestamp, 0
-            LabelIndex.findOrInsert(createdId, LabelIndex.defaultName, LabelIndex.defaultMetaSeqs.toList, "none")
-          } else {
-            indices.foreach { index =>
-              val metaSeq = index.propNames.map { name => labelMetaMap(name) }
-              LabelIndex.findOrInsert(createdId, index.name, metaSeq.toList, "none")
+            if (indices.isEmpty) { // make default index with _PK, _timestamp, 0
+              LabelIndex.findOrInsert(createdId, LabelIndex.defaultName, LabelIndex.defaultMetaSeqs.toList, "none")
+            } else {
+              indices.foreach { index =>
+                val metaSeq = index.propNames.map { name => labelMetaMap(name) }
+                LabelIndex.findOrInsert(createdId, index.name, metaSeq.toList, "none")(session)
+              }
             }
+            createdId
           }
+        }
 
+//        /** insert serviceColumn */
+//        val srcCol = ServiceColumn.findOrInsert(srcServiceId, srcColumnName, Some(srcColumnType), schemaVersion)
+//        val tgtCol = ServiceColumn.findOrInsert(tgtServiceId, tgtColumnName, Some(tgtColumnType), schemaVersion)
+//
+//        if (srcCol.columnType != srcColumnType) throw new RuntimeException(s"source service column type not matched ${srcCol.columnType} != ${srcColumnType}")
+//        if (tgtCol.columnType != tgtColumnType) throw new RuntimeException(s"target service column type not matched ${tgtCol.columnType} != ${tgtColumnType}")
+//
+//        /** create label */
+//        Label.findByName(labelName, useCache = false).getOrElse {
+//
+//          val createdId = insert(labelName, srcServiceId, srcColumnName, srcColumnType,
+//            tgtServiceId, tgtColumnName, tgtColumnType, isDirected, serviceName, serviceId, consistencyLevel,
+//            hTableName.getOrElse(service.hTableName), hTableTTL.orElse(service.hTableTTL), schemaVersion, isAsync, compressionAlgorithm).toInt
+//
+//          val labelMetaMap = metaProps.map { case Prop(propName, defaultValue, dataType) =>
+//            val labelMeta = LabelMeta.findOrInsert(createdId, propName, defaultValue, dataType)
+//            (propName -> labelMeta.seq)
+//          }.toMap ++ Map(LabelMeta.timestamp.name -> LabelMeta.timestamp.seq)
+//
+//          if (indices.isEmpty) { // make default index with _PK, _timestamp, 0
+//            LabelIndex.findOrInsert(createdId, LabelIndex.defaultName, LabelIndex.defaultMetaSeqs.toList, "none")
+//          } else {
+//            indices.foreach { index =>
+//              val metaSeq = index.propNames.map { name => labelMetaMap(name) }
+//              LabelIndex.findOrInsert(createdId, index.name, metaSeq.toList, "none")
+//            }
+//          }
+//
           /** TODO: */
           (hTableName, hTableTTL) match {
             case (None, None) => // do nothing
@@ -187,7 +217,7 @@ object Label extends Model[Label] {
           val ret = findByName(labelName, useCache = false).get
           putsToCache(cacheKeys.map(k => k -> ret))
           ret
-        }
+//        }
       }
 
     newLabel.getOrElse(throw new RuntimeException("failed to create label"))

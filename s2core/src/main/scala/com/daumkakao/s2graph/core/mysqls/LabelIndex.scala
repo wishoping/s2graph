@@ -49,7 +49,7 @@ object LabelIndex extends Model[LabelIndex] {
       .updateAndReturnGeneratedKey.apply()
   }
 
-  def findOrInsert(labelId: Int, indexName: String, metaSeqs: List[Byte], formulars: String): LabelIndex = {
+  def findOrInsert(labelId: Int, indexName: String, metaSeqs: List[Byte], formulars: String)(implicit dBSession: DBSession: LabelIndex = {
     //    Logger.debug(s"findOrInsert: $labelId, $seq, $metaSeqs, $formulars")
     findByLabelIdAndSeqs(labelId, metaSeqs) match {
       case Some(s) => s

@@ -45,7 +45,7 @@ object ServiceColumn extends Model[ServiceColumn] {
     val cacheKeys = List(s"id=$id", s"serviceId=$serviceId:columnName=$columnName")
     cacheKeys.foreach(expireCache(_))
   }
-  def findOrInsert(serviceId: Int, columnName: String, columnType: Option[String], schemaVersion: String): ServiceColumn = {
+  def findOrInsert(serviceId: Int, columnName: String, columnType: Option[String], schemaVersion: String)(implicit dBSession: DBSession): ServiceColumn = {
     find(serviceId, columnName) match {
       case Some(sc) => sc
       case None =>

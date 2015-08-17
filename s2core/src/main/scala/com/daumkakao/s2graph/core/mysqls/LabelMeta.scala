@@ -109,7 +109,7 @@ object LabelMeta extends Model[LabelMeta] with JSONParser {
   }
 
   def findOrInsert(labelId: Int, name: String,
-                   defaultValue: String, dataType: String): LabelMeta = {
+                   defaultValue: String, dataType: String)(implicit dBSession: DBSession): LabelMeta = {
     //    play.api.Logger.debug(s"findOrInsert: $labelId, $name")
     findByName(labelId, name) match {
       case Some(c) => c
