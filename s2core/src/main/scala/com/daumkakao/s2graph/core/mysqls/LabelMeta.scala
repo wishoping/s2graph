@@ -97,7 +97,7 @@ object LabelMeta extends Model[LabelMeta] with JSONParser {
     }
 
   }
-  def insert(labelId: Int, name: String, defaultValue: String, dataType: String) = {
+  def insert(labelId: Int, name: String, defaultValue: String, dataType: String)(implicit dbSession: DBSession) = {
     val ls = findAllByLabelId(labelId, false)
     //    val seq = LabelIndexProp.maxValue + ls.size + 1
     val seq = ls.size + 1
@@ -109,12 +109,12 @@ object LabelMeta extends Model[LabelMeta] with JSONParser {
   }
 
   def findOrInsert(labelId: Int, name: String,
-                   defaultValue: String, dataType: String)(implicit dBSession: DBSession): LabelMeta = {
+                   defaultValue: String, dataType: String)(implicit dbSession: DBSession): LabelMeta = {
     //    play.api.Logger.debug(s"findOrInsert: $labelId, $name")
     findByName(labelId, name) match {
       case Some(c) => c
       case None =>
-        insert(labelId, name, defaultValue, dataType)
+        insert(labelId, name, defaultValue, dataType)(dbSession)
 //        val cacheKey = s"labelId=$labelId:name=$name"
 //        val cacheKeys = s"labelId=$labelId"
         val cacheKey = "labelId=" + labelId + ":name=" + name

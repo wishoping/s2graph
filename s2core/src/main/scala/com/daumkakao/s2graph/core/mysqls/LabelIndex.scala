@@ -41,7 +41,7 @@ object LabelIndex extends Model[LabelIndex] {
     }
   }
 
-  def insert(labelId: Int, indexName: String, seq: Byte, metaSeqs: List[Byte], formulars: String): Long = {
+  def insert(labelId: Int, indexName: String, seq: Byte, metaSeqs: List[Byte], formulars: String)(implicit dbSession: DBSession): Long = {
     sql"""
     	insert into label_indices(label_id, name, seq, meta_seqs, formulars)
     	values (${labelId}, ${indexName}, ${seq}, ${metaSeqs.mkString(",")}, ${formulars})
@@ -49,7 +49,7 @@ object LabelIndex extends Model[LabelIndex] {
       .updateAndReturnGeneratedKey.apply()
   }
 
-  def findOrInsert(labelId: Int, indexName: String, metaSeqs: List[Byte], formulars: String)(implicit dBSession: DBSession: LabelIndex = {
+  def findOrInsert(labelId: Int, indexName: String, metaSeqs: List[Byte], formulars: String)(implicit dbSession: DBSession): LabelIndex = {
     //    Logger.debug(s"findOrInsert: $labelId, $seq, $metaSeqs, $formulars")
     findByLabelIdAndSeqs(labelId, metaSeqs) match {
       case Some(s) => s
@@ -57,7 +57,7 @@ object LabelIndex extends Model[LabelIndex] {
         val orders = findByLabelIdAll(labelId, false)
         val seq = (orders.size + 1).toByte
         assert(seq <= maxOrderSeq)
-        val createdId = insert(labelId, indexName, seq, metaSeqs, formulars)
+        val createdId = insert(labelId, indexName, seq, metaSeqs, formulars)(dbSession)
         val cacheKeys = List(s"labelId=$labelId:seq=$seq",
           s"labelId=$labelId:seqs=$metaSeqs", s"labelId=$labelId:seq=$seq", s"id=$createdId")
         cacheKeys.foreach(expireCache(_))

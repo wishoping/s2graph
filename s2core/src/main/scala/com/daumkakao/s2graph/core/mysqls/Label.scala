@@ -61,7 +61,7 @@ object Label extends Model[Label] {
              hTableTTL: Option[Int],
              schemaVersion: String,
              isAsync: Boolean,
-             compressionAlgorithm: String)(implicit dBSession: DBSession) = {
+             compressionAlgorithm: String)(implicit dbSession: DBSession) = {
     sql"""
     	insert into labels(label,
     src_service_id, src_column_name, src_column_type,
