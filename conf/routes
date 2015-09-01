@@ -99,3 +99,16 @@ PUT   /graphs/loadCache                                                        c
 
 # Experiment API
 POST     /graphs/experiment/:accessToken/:experimentName/:uuid                    controllers.ExperimentController.experiment(accessToken, experimentName, uuid)
+
+
+# Chat
+POST     /chat/create/:serviceName/:userId/:chatName                            controllers.ChatController.createChat(serviceName, userId, chatName)
+POST     /chat/join/:serviceName/:chatId/:userIds                               controllers.ChatController.joinChat(serviceName, chatId, userIds)
+POST     /chat/send/:serviceName/:userId/:chatId                                controllers.ChatController.sendMsgToChat(serviceName, userId, chatId)
+POST     /chat/delete/:serviceName/:chatId/:msgId                               controllers.ChatController.deleteMsgInChatId(serviceName, chatId, msgId)
+POST     /chat/update/:serviceName/:userId/:chatId                              controllers.ChatController.updateUserChat(serviceName, userId, chatId)
+GET      /chat/id/:serviceName/:chatId                                          controllers.ChatController.usersInChatId(serviceName, chatId)
+GET      /chat/ids/:serviceName/:userId                                         controllers.ChatController.userChatIds(serviceName, userId)
+GET      /chat/names/:serviceName/:userId                                       controllers.ChatController.userChatIdsWithName(serviceName, userId)
+GET      /chat/messages/:serviceName/:chatId/:lastTs                            controllers.ChatController.chatIdMessages(serviceName, chatId, lastTs: Long)
+GET      /chat/messagesLs/:serviceName/:userId/:lastTs                          controllers.ChatController.chatIdsMessages(serviceName, userId, lastTs: Long)
