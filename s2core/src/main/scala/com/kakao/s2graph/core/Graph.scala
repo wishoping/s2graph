@@ -28,9 +28,11 @@ object Graph {
   val edgeCf = "e".getBytes()
 
   val maxValidEdgeListSize = 10000
+  var MaxRetryNum = 10
 
   private val connections = new java.util.concurrent.ConcurrentHashMap[String, Connection]()
   private val clients = new java.util.concurrent.ConcurrentHashMap[String, HBaseClient]()
+
 
   var emptyKVs = new ArrayList[KeyValue]()
 
@@ -39,6 +41,7 @@ object Graph {
   val DefaultCacheMaxSize = 10000
   val DefaultTtlSeconds = 60
   val DefaultScore = 1.0
+
 
   val DefaultConfigs: Map[String, AnyRef] = Map(
     "hbase.zookeeper.quorum" -> "localhost",
@@ -52,7 +55,8 @@ object Graph {
     "db.default.password" -> "graph",
     "db.default.user" -> "graph",
     "cache.max.size" -> java.lang.Integer.valueOf(DefaultCacheMaxSize),
-    "cache.ttl.seconds" -> java.lang.Integer.valueOf(60))
+    "cache.ttl.seconds" -> java.lang.Integer.valueOf(60),
+    "max.retry.number" -> java.lang.Integer.valueOf(10))
 
   var config: Config = ConfigFactory.parseMap(DefaultConfigs)
   var executionContext: ExecutionContext = ExecutionContext.fromExecutor(Executors.newFixedThreadPool(1))
@@ -100,6 +104,7 @@ object Graph {
     this.executionContext = ex
     this.singleGetTimeout = this.config.getInt("hbase.client.operation.timeout")
     this.clientFlushInterval = this.config.getInt("async.hbase.client.flush.interval").toShort
+    this.MaxRetryNum = this.config.getInt("max.retry.number")
 
     // make hbase client for cache
     getClient(hbaseConfig.get("hbase.zookeeper.quorum"))
@@ -457,7 +462,7 @@ object Graph {
     ListBuffer[(HashKey, FilterHashKey, Edge, Double)])
 
   /**
-   * create edge`s hashKey, filterHashKey for aggregate edges for queryParams in current step.
+   * create edge hashKey, filterHashKey for aggregate edges for queryParams in current step.
    * @param queryParam
    * @param edge
    * @param isDegree
@@ -750,12 +755,12 @@ object Graph {
     Future.sequence(futures)
   }
 
-  def mutateVertex(vertex: Vertex, withWait: Boolean = false): Future[Boolean] = {
+  def mutateVertex(vertex: Vertex, withWait: Boolean = false, walTopic: String): Future[Boolean] = {
     implicit val ex = this.executionContext
     if (vertex.op == GraphUtil.operations("delete")) {
       deleteVertex(vertex, withWait)
     } else if (vertex.op == GraphUtil.operations("deleteAll")) {
-      deleteVerticesAll(List(vertex)).onComplete {
+      deleteVerticesAll(List(vertex), walTopic).onComplete {
         case Success(s) => logger.info(s"mutateVertex($vertex) for deleteAll successed.")
         case Failure(ex) => logger.error(s"mutateVertex($vertex) for deleteAll failed. $ex", ex)
       }
@@ -768,9 +773,9 @@ object Graph {
     }
   }
 
-  def mutateVertices(vertices: Seq[Vertex], withWait: Boolean = false): Future[Seq[Boolean]] = {
+  def mutateVertices(vertices: Seq[Vertex], withWait: Boolean = false, walTopic: String): Future[Seq[Boolean]] = {
     implicit val ex = this.executionContext
-    val futures = vertices.map { vertex => mutateVertex(vertex, withWait) }
+    val futures = vertices.map { vertex => mutateVertex(vertex, withWait, walTopic) }
     Future.sequence(futures)
   }
 
@@ -793,7 +798,7 @@ object Graph {
    * O(E), maynot feasible
    */
 
-  def deleteVerticesAll(vertices: List[Vertex]): Future[Boolean] = {
+  def deleteVerticesAll(vertices: List[Vertex], walTopic: String): Future[Boolean] = {
     implicit val ex = this.executionContext
 
     val labelsMap = for {
@@ -808,8 +813,8 @@ object Graph {
 
     /** delete vertex only */
     for {
-      relEdgesOutDeleted <- deleteVerticesAllAsync(vertices, labels.toSeq, GraphUtil.directions("out"))
-      relEdgesInDeleted <- deleteVerticesAllAsync(vertices, labels.toSeq, GraphUtil.directions("in"))
+      relEdgesOutDeleted <- deleteVerticesAllAsync(vertices, labels.toSeq, GraphUtil.directions("out"), walTopic = walTopic)
+      relEdgesInDeleted <- deleteVerticesAllAsync(vertices, labels.toSeq, GraphUtil.directions("in"), walTopic = walTopic)
       vertexDeleted <- deleteVertices(vertices)
     } yield {
       relEdgesOutDeleted && relEdgesInDeleted && vertexDeleted.forall(identity)
@@ -817,7 +822,7 @@ object Graph {
   }
 
   /** not care about partial failure for now */
-  def deleteVerticesAllAsync(srcVertices: List[Vertex], labels: Seq[Label], dir: Int, ts: Option[Long] = None): Future[Boolean] = {
+  def deleteVerticesAllAsync(srcVertices: List[Vertex], labels: Seq[Label], dir: Int, ts: Option[Long] = None, walTopic: String): Future[Boolean] = {
     implicit val ex = Graph.executionContext
     val requestTs = ts.getOrElse(System.currentTimeMillis())
     val queryParams = for {
@@ -831,68 +836,93 @@ object Graph {
     val q = Query(srcVertices, Vector(step), false)
 
 
-    def deleteDuplicateEdges(queryResultLs: Seq[QueryResult]): Future[Boolean] = {
-      val futures = for {
-        queryResult <- queryResultLs
-        (edge, score) <- queryResult.edgeWithScoreLs
-        duplicateEdge = edge.duplicateEdge
-        //        version = edge.version + Edge.incrementVersion // this lead to forcing delete on fetched edges
-        version = requestTs
-        copiedEdge = edge.copy(ts = requestTs, version = version)
-        hbaseZkAddr = queryResult.queryParam.label.hbaseZkAddr
-      } yield {
-          logger.debug(s"FetchedEdge: $edge")
-          logger.debug(s"DeleteEdge: $duplicateEdge")
-          val indexedEdgesDeletes = duplicateEdge.edgesWithIndex.map { indexedEdge =>
-            val delete = indexedEdge.buildDeletesAsync()
-            logger.debug(s"indexedEdgeDelete: $delete")
-            delete
-          }
-          //          ++ edge.edgesWithIndex.map { indexedEdge =>
-          //            val delete = indexedEdge.buildDeletesAsync()
-          //            logger.debug(s"indexedEdgeDelete: $delete")
-          //            delete
-          //          }
-          val indexedEdgesIncrements = duplicateEdge.edgesWithIndex.map { indexedEdge =>
-            val incr = indexedEdge.buildIncrementsAsync(-1L)
-            logger.debug(s"indexedEdgeIncr: $incr")
-            incr
-          }
-          //          ++ edge.edgesWithIndex.map { indexedEdge =>
-          //            val incr = indexedEdge.buildIncrementsAsync(-1L)
-          //            logger.debug(s"indexedEdgeIncr: $incr")
-          //            incr
-          //          }
-          val snapshotEdgeDelete = duplicateEdge.toInvertedEdgeHashLike.buildDeleteAsync()
-
-          /** delete inverse edges first, then delete current edge entirely */
+    def deleteDuplicateEdges(queryResult: QueryResult, retryNum: Int = 0, walTopic: String): Future[Boolean] = {
+      if (retryNum > MaxRetryNum) {
+        logger.error(s"deleteDuplicateEdges failed: ${queryResult}")
+        queryResult.edgeWithScoreLs.foreach { case (edge, score) =>
+          val copiedEdge = edge.copy(op = GraphUtil.operations("delete"), ts = requestTs, version = requestTs)
+          ExceptionHandler.enqueue(ExceptionHandler.toKafkaMessage(element = copiedEdge))
+        }
+        Future.successful(false)
+      } else {
+        val deletes =
           for {
-            inverseEdgeDeletes <- Graph.writeAsync(hbaseZkAddr, Seq(snapshotEdgeDelete) :: indexedEdgesDeletes ++ indexedEdgesIncrements)
-            if inverseEdgeDeletes.forall(identity)
-            edgeDeletes <-
-            if (edge.ts < requestTs) Graph.writeAsync(hbaseZkAddr, copiedEdge.edgesWithIndex.map { e => e.buildDeletesAsync() })
-            else Future.successful(Seq(true))
+            (edge, score) <- queryResult.edgeWithScoreLs
+            duplicateEdge = edge.duplicateEdge.copy(op = GraphUtil.operations("delete"))
+            //        version = edge.version + Edge.incrementVersion // this lead to forcing delete on fetched edges
+            version = requestTs
+            copiedEdge = edge.copy(op = GraphUtil.operations("delete"), ts = requestTs, version = version)
+            hbaseZkAddr = queryResult.queryParam.label.hbaseZkAddr
           } yield {
-            //            inverseEdgeDeletes.forall(identity)
-            edgeDeletes.forall(identity)
+            if (retryNum == 0)
+              ExceptionHandler.enqueue(ExceptionHandler.toKafkaMessage(topic = walTopic, element = copiedEdge))
+
+            logger.debug(s"FetchedEdge: $edge")
+            logger.debug(s"DeleteEdge: $duplicateEdge")
+
+            val indexedEdgesDeletes = if (edge.ts < requestTs) duplicateEdge.edgesWithIndex.flatMap { indexedEdge =>
+              val delete = indexedEdge.buildDeletesAsync()
+              logger.debug(s"indexedEdgeDelete: $delete")
+              delete
+            } else Nil
+
+            val indexedEdgesIncrements = if (edge.ts < requestTs) duplicateEdge.edgesWithIndex.flatMap { indexedEdge =>
+              val incr = indexedEdge.buildIncrementsAsync(-1L)
+              logger.debug(s"indexedEdgeIncr: $incr")
+              incr
+            } else Nil
+
+            val snapshotEdgeDelete =
+              if (edge.ts < requestTs) Seq(duplicateEdge.toInvertedEdgeHashLike.buildDeleteAsync())
+              else Nil
+
+            val copyEdgeIndexedEdgesDeletes =
+              if (edge.ts < requestTs) copiedEdge.edgesWithIndex.flatMap { e => e.buildDeletesAsync() }
+              else Nil
+
+            snapshotEdgeDelete ++ indexedEdgesDeletes ++ indexedEdgesIncrements ++ copyEdgeIndexedEdgesDeletes
+          }
+
+        Graph.writeAsyncWithWait(queryResult.queryParam.label.hbaseZkAddr, deletes).flatMap { rets =>
+          val successAll = rets.forall(identity)
+          if (!successAll) {
+            deleteDuplicateEdges(queryResult, retryNum + 1, walTopic)
+          } else {
+            Future.successful(successAll)
           }
         }
-      Future.sequence(futures).map { rets => rets.forall(identity) }
+      }
     }
-
+    def deleteDuplicateEdgesLs(queryResultLs: Seq[QueryResult], retryNum: Int = 0, walTopic: String): Future[Boolean] = {
+      if (retryNum > MaxRetryNum) {
+        logger.error(s"deleteDuplicateEdgesLs failed. ${queryResultLs}")
+        Future.successful(false)
+      } else {
+        val futures = for {
+          queryResult <- queryResultLs
+        } yield {
+            deleteDuplicateEdges(queryResult, 0, walTopic)
+          }
+        Future.sequence(futures).flatMap { rets =>
+          val allSuccess = rets.forall(identity)
+          if (!allSuccess) deleteDuplicateEdgesLs(queryResultLs, retryNum + 1, walTopic)
+          else Future.successful(allSuccess)
+        }
+      }
+    }
     for {
       queryResultLs <- getEdgesAsync(q)
-      ret <- deleteDuplicateEdges(queryResultLs)
+      ret <- deleteDuplicateEdgesLs(queryResultLs, 0, walTopic)
     } yield ret
   }
 
 
-  def mutateElements(elements: Seq[GraphElement]): Future[Seq[Boolean]] = {
+  def mutateElements(elements: Seq[GraphElement], walTopic: String): Future[Seq[Boolean]] = {
     implicit val ex = this.executionContext
     val futures = elements.map { element =>
       element match {
         case edge: Edge => mutateEdge(edge)
-        case vertex: Vertex => mutateVertex(vertex)
+        case vertex: Vertex => mutateVertex(vertex, walTopic = walTopic)
         case _ => throw new RuntimeException(s"$element is not edge/vertex")
       }
     }
@@ -943,19 +973,19 @@ object Graph {
       None
   } get
 
-  def bulkMutates(elements: Iterable[GraphElement], mutateInPlace: Boolean = false) = {
-    val vertices = new ListBuffer[Vertex]
-    val edges = new ListBuffer[Edge]
-    for (e <- elements) {
-      e match {
-        case edge: Edge => edges += edge
-        case vertex: Vertex => vertices += vertex
-        case _ => throw new Exception("GraphElement should be either vertex or edge.")
-      }
-    }
-    mutateVertices(vertices)
-    mutateEdges(edges)
-  }
+//  def bulkMutates(elements: Iterable[GraphElement], mutateInPlace: Boolean = false, walTopic: String) = {
+//    val vertices = new ListBuffer[Vertex]
+//    val edges = new ListBuffer[Edge]
+//    for (e <- elements) {
+//      e match {
+//        case edge: Edge => edges += edge
+//        case vertex: Vertex => vertices += vertex
+//        case _ => throw new Exception("GraphElement should be either vertex or edge.")
+//      }
+//    }
+//    mutateVertices(vertices, walTopic = walTopic)
+//    mutateEdges(edges)
+//  }
 
   def toVertex(s: String): Option[Vertex] = {
     toVertex(GraphUtil.split(s))

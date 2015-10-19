@@ -365,7 +365,7 @@ case class Edge(srcVertex: Vertex,
 case class EdgeWriter(edge: Edge) {
   implicit val ex = Graph.executionContext
 
-  val MaxTryNum = 10
+  val MaxTryNum = Graph.MaxRetryNum
   val op = edge.op
   val label = edge.label
   val labelWithDir = edge.labelWithDir
@@ -423,7 +423,7 @@ case class EdgeWriter(edge: Edge) {
 
     //             exponentialBackOff: ExponentialBackOff = ExponentialBackOff()): Unit = {
     if (tryNum >= MaxTryNum) {
-      logger.error(s"mutate failed after $tryNum retry")
+      logger.error(s"mutate failed after $tryNum retry, $this")
       ExceptionHandler.enqueue(ExceptionHandler.toKafkaMessage(element = edge))
       //      throw new RuntimeException(s"mutate failed after $tryNum")
     } else {
