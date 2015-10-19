@@ -111,7 +111,9 @@ object Graph {
 
     ExceptionHandler.apply(config)
 
-    DefaultConfigs.foreach { case (k, v) =>
+    for {
+      (k, v) <- this.config.entrySet()
+    } {
       logger.info(s"[Initialized]: $k, ${this.config.getAnyRef(k)}")
       println(s"[Initialized]: $k, ${this.config.getAnyRef(k)}")
     }
