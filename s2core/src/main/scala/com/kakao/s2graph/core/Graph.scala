@@ -15,7 +15,7 @@ import org.apache.hadoop.hbase.HBaseConfiguration
 import org.apache.hadoop.hbase.client._
 import org.hbase.async._
 
-import scala.collection.JavaConversions.{mapAsScalaConcurrentMap, _}
+import scala.collection.JavaConversions._
 import scala.collection._
 import scala.collection.mutable.ListBuffer
 import scala.concurrent._
@@ -112,7 +112,8 @@ object Graph {
     ExceptionHandler.apply(config)
 
     for {
-      (k, v) <- this.config.entrySet()
+      entry <- this.config.entrySet()
+      (k, v) = (entry.getKey, entry.getValue)
     } {
       logger.info(s"[Initialized]: $k, ${this.config.getAnyRef(k)}")
       println(s"[Initialized]: $k, ${this.config.getAnyRef(k)}")
