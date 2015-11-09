@@ -2,6 +2,7 @@ package com.kakao.s2graph.core.types
 
 import com.kakao.s2graph.core.GraphUtil
 import com.kakao.s2graph.core.types.HBaseType._
+import com.kakao.s2graph.core.utils.logger
 import org.apache.hadoop.hbase.util.Bytes
 
 /**
@@ -139,6 +140,7 @@ case class SourceAndTargetVertexIdPair(val srcInnerId: InnerValLike, val tgtInne
   import SourceAndTargetVertexIdPair._
   override def bytes: Array[Byte] = {
     val hashBytes = Bytes.toBytes(GraphUtil.murmur3(srcInnerId + delimiter + tgtInnerId))
+    logger.debug(s"SourceAndTargetVertexIdPair: $srcInnerId, $tgtInnerId, ${hashBytes.toList}")
     Bytes.add(hashBytes, srcInnerId.bytes, tgtInnerId.bytes)
   }
 }
