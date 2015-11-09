@@ -170,13 +170,7 @@ object EdgeController extends Controller with RequestParser {
       }
       ExceptionHandler.enqueues(kafkaMessages)
 
-      val future =
-        if (withWait) s2.deleteAllAdjacentEdges(vertices.toList, labels, GraphUtil.directions(direction), ts)
-        else {
-          s2.deleteAllAdjacentEdges(vertices.toList, labels, GraphUtil.directions(direction), ts)
-          Future.successful(true)
-        }
-
+      val future = s2.deleteAllAdjacentEdges(vertices.toList, labels, GraphUtil.directions(direction), ts)
       future.onFailure { case ex: Exception =>
         logger.error(s"[Error]: deleteAllInner failed.")
         val kafkaMessages = for {
@@ -190,7 +184,7 @@ object EdgeController extends Controller with RequestParser {
           }
         ExceptionHandler.enqueues(kafkaMessages)
       }
-      future
+      if (withWait) future else Future.successful(true)
 
     })
 
