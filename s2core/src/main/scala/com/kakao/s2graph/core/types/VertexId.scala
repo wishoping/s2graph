@@ -140,7 +140,6 @@ case class SourceAndTargetVertexIdPair(val srcInnerId: InnerValLike, val tgtInne
   import SourceAndTargetVertexIdPair._
   override def bytes: Array[Byte] = {
     val hashBytes = Bytes.toBytes(GraphUtil.murmur3(srcInnerId + delimiter + tgtInnerId))
-    logger.debug(s"SourceAndTargetVertexIdPair: $srcInnerId, $tgtInnerId, ${hashBytes.toList}")
     Bytes.add(hashBytes, srcInnerId.bytes, tgtInnerId.bytes)
   }
 }

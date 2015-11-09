@@ -25,9 +25,6 @@ object AsynchbaseStorage {
   val vertexCf = HSerializable.vertexCf
   val edgeCf = HSerializable.edgeCf
   val emptyKVs = new util.ArrayList[KeyValue]()
-  private val maxValidEdgeListSize = 10000
-  private val MaxFetchSizeForDeleteAll = 100
-  private val MaxBackOff = 10
 
   def makeClient(config: Config, overrideKv: (String, String)*) = {
     val asyncConfig: org.hbase.async.Config = new org.hbase.async.Config()
@@ -65,6 +62,11 @@ class AsynchbaseStorage(config: Config, cache: Cache[Integer, Seq[QueryResult]],
 
   private val clientFlushInterval = config.getInt("hbase.rpcs.buffered_flush_interval").toString().toShort
   private val MaxRetryNum = config.getInt("max.retry.number")
+
+  private val maxValidEdgeListSize = config.getInt("delete.all.max.edges")
+  private val MaxFetchSizeForDeleteAll = config.getInt("delete.all.fetch.size")
+  private val MaxBackOff = config.getInt("max.retry.backoff")
+
 
   /**
    * Serializer/Deserializer
