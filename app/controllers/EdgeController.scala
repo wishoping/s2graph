@@ -10,9 +10,11 @@ import play.api.libs.json._
 import play.api.mvc.{Controller, Result}
 
 import scala.concurrent.Future
+import scala.util.Failure
 
 object EdgeController extends Controller with RequestParser {
 
+  import com.kakao.s2graph.core.utils.Extensions.FutureOps
   import ExceptionHandler._
   import controllers.ApplicationController._
   import play.api.libs.concurrent.Execution.Implicits._
@@ -142,10 +144,10 @@ object EdgeController extends Controller with RequestParser {
   }
 
   def deleteAll() = withHeaderAsync(jsonParser) { request =>
-    deleteAllInner(request.body)
+    deleteAllInner(request.body, withWait = false)
   }
 
-  def deleteAllInner(jsValue: JsValue) = {
+  def deleteAllInner(jsValue: JsValue, withWait: Boolean) = {
     val deleteResults = Future.sequence(jsValue.as[Seq[JsValue]] map { json =>
 
       val labelName = (json \ "label").as[String]
@@ -156,16 +158,37 @@ object EdgeController extends Controller with RequestParser {
       val ts = (json \ "timestamp").asOpt[Long].getOrElse(System.currentTimeMillis())
       val vertices = toVertices(labelName, direction, ids)
       /** logging for delete all request */
-      for {
+
+      val kafkaMessages = for {
         id <- ids
         label <- labels
-      } {
+      } yield {
         val tsv = Seq(ts, "deleteAll", "e", id, id, label.label, "{}", direction).mkString("\t")
         val topic = if (label.isAsync) Config.KAFKA_LOG_TOPIC_ASYNC else Config.KAFKA_LOG_TOPIC
         val kafkaMsg = KafkaMessage(new ProducerRecord[Key, Val](topic, null, tsv))
-        ExceptionHandler.enqueue(kafkaMsg)
+        kafkaMsg
       }
-      s2.deleteAllAdjacentEdges(vertices.toList, labels, GraphUtil.directions(direction), ts)
+      ExceptionHandler.enqueues(kafkaMessages)
+
+      val future =
+        if (withWait) s2.deleteAllAdjacentEdges(vertices.toList, labels, GraphUtil.directions(direction), ts)
+        else Future.successful(true)
+
+      future.onFailure { case ex: Exception =>
+        logger.error(s"[Error]: deleteAllInner failed.")
+        val kafkaMessages = for {
+          id <- ids
+          label <- labels
+        } yield {
+            val tsv = Seq(ts, "deleteAll", "e", id, id, label.label, "{}", direction).mkString("\t")
+            val topic = failTopic
+            val kafkaMsg = KafkaMessage(new ProducerRecord[Key, Val](topic, null, tsv))
+            kafkaMsg
+          }
+        ExceptionHandler.enqueues(kafkaMessages)
+      }
+      future
+
     })
 
     deleteResults.map { rst =>

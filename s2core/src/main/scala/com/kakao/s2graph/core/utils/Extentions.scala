@@ -3,20 +3,44 @@ package com.kakao.s2graph.core.utils
 import com.stumbleupon.async.{Callback, Deferred}
 
 import scala.concurrent.{Promise, ExecutionContext, Future}
+import scala.util.{Failure, Success}
 
 object Extensions {
 
   implicit class FutureOps[T](f: Future[T])(implicit ec: ExecutionContext) {
 
+    def withFailedLogging(msg: String): Future[T] = {
+      f.onFailure {
+        case ex: Exception =>
+          logger.error(s"[Error]: future failed. $msg", ex)
+          throw ex
+      }
+      f
+    }
+
     def retryFallback(n: Int)(fallback: => T): Future[T] = n match {
-      case i if i > 1 => f recoverWith { case t: Throwable => f.retryFallback(n - 1)(fallback) }
+      case i if i > 1 => f recoverWith { case t: Throwable =>
+        logger.error(s"[Error]: retryFallback failed. tryNumber: $n")
+        f.retryFallback(n - 1)(fallback)
+      }
       case _ => Future.successful(fallback)
     }
 
     def retry(n: Int) = retryWith(n)(f)
 
+    def retryOnSuccess(n: Int)(fallback: => Future[T]): Future[T] = n match {
+      case i if i > 1 => f.flatMap { ret =>
+        logger.info(s"[Trying]: retryOnSuccess. tryNumber: $n")
+        f.retryOnSuccess(n - 1)(fallback)
+      }
+      case _ => fallback
+    }
+
     def retryWith(n: Int)(fallback: => Future[T]): Future[T] = n match {
-      case i if i > 1 => f recoverWith { case t: Throwable => f.retryWith(n - 1)(fallback) }
+      case i if i > 1 => f recoverWith { case t: Throwable =>
+        logger.error(s"[Error]: retryWith failed. tryNumber: $n")
+        f.retryWith(n - 1)(fallback)
+      }
       case _ => fallback
     }
   }
