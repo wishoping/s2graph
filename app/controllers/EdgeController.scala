@@ -172,7 +172,10 @@ object EdgeController extends Controller with RequestParser {
 
       val future =
         if (withWait) s2.deleteAllAdjacentEdges(vertices.toList, labels, GraphUtil.directions(direction), ts)
-        else Future.successful(true)
+        else {
+          s2.deleteAllAdjacentEdges(vertices.toList, labels, GraphUtil.directions(direction), ts)
+          Future.successful(true)
+        }
 
       future.onFailure { case ex: Exception =>
         logger.error(s"[Error]: deleteAllInner failed.")
