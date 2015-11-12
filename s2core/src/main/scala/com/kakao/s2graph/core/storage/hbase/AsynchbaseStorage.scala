@@ -409,12 +409,8 @@ class AsynchbaseStorage(config: Config, cache: Cache[Integer, Seq[QueryResult]],
             val snapshotKv = snapshotEdgeSerializer(snapshotEdge.toSnapshotEdge).toKeyValues.head
             val requestKv = snapshotEdgeSerializer(requestEdge.toSnapshotEdge).toKeyValues.head
 
-            if (oldLockTs == currentTs
-//              && requestKv.row.toList == snapshotKv.row.toList
-//              && requestKv.value.toList == snapshotKv.value.toList
-//              && requestKv.cf.toList == snapshotKv.cf.toList
-//              && requestKv.qualifier.toList == snapshotKv.qualifier.toList
-            ) {
+            if (oldLockTs == currentTs && requestKv.value.toList == snapshotKv.value.toList) {
+              logger.error("retry in same edge")
 
               // lock is mine
               // step 2. mutateIndexEdges
