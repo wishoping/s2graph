@@ -20,7 +20,9 @@ object PostProcess extends JSONParser {
     //    filterNot {case (edge, score) => edge.props.contains(LabelMeta.degreeSeq)}
     val groupedEdgesWithRank = (for {
       queryResult <- queryResultLs
-      (edge, score) <- queryResult.edgeWithScoreLs if !excludeIds.contains(toHashKey(edge, queryResult.queryParam, queryResult.query.filterOutFields))
+      edgeWithScore <- queryResult.edgeWithScoreLs
+      (edge, score) = EdgeWithScore.unapply(edgeWithScore).get
+      if !excludeIds.contains(toHashKey(edge, queryResult.queryParam, queryResult.query.filterOutFields))
     } yield {
         (queryResult.queryParam, edge, score)
       }).groupBy {
@@ -96,7 +98,8 @@ object PostProcess extends JSONParser {
     for {
       queryResult <- queryResultLs
       q = queryResult.query
-      (edge, score) <- queryResult.edgeWithScoreLs
+      edgeWithScore <- queryResult.edgeWithScoreLs
+      (edge, score) = EdgeWithScore.unapply(edgeWithScore).get
     } yield toHashKey(edge, queryResult.queryParam, q.filterOutFields)
   }
 
@@ -135,8 +138,9 @@ object PostProcess extends JSONParser {
       for {
         queryResult <- queryResultLs
         queryParam = queryResult.queryParam
-
-        (edge, score) <- queryResult.edgeWithScoreLs if !excludeIds.contains(toHashKey(edge, queryResult.queryParam, q.filterOutFields))
+        edgeWithScore <- queryResult.edgeWithScoreLs
+        (edge, score) = EdgeWithScore.unapply(edgeWithScore).get
+        if !excludeIds.contains(toHashKey(edge, queryResult.queryParam, q.filterOutFields))
       } {
         withScore = queryResult.query.withScore
         val (srcColumn, _) = queryParam.label.srcTgtColumn(edge.labelWithDir.dir)
@@ -226,15 +230,13 @@ object PostProcess extends JSONParser {
     } yield labelMeta.name -> jsValue
   }
 
-
   private def edgeParent(parentEdges: Seq[EdgeWithScore], q: Query, queryParam: QueryParam): JsValue = {
-
     if (parentEdges.isEmpty) {
       JsNull
     } else {
       val parents = for {
         parent <- parentEdges
-        (parentEdge, parentScore) = (parent.edge, parent.score)
+        (parentEdge, parentScore) = EdgeWithScore.unapply(parent).get
         parentQueryParam = QueryParam(parentEdge.labelWithDir)
         parents = edgeParent(parentEdge.parentEdges, q, parentQueryParam) if parents != JsNull
       } yield {
@@ -246,6 +248,7 @@ object PostProcess extends JSONParser {
       Json.toJson(parents)
     }
   }
+
   /** TODO */
   def edgeToJsonInner(edge: Edge, score: Double, q: Query, queryParam: QueryParam): Map[String, JsValue] = {
     val (srcColumn, tgtColumn) = queryParam.label.srcTgtColumn(edge.labelWithDir.dir)
@@ -294,7 +297,10 @@ object PostProcess extends JSONParser {
     } yield {
       Json.obj("serviceName" -> serviceColumn.service.serviceName,
         "columnName" -> serviceColumn.columnName,
-        "id" -> id, "props" -> propsToJson(vertex), "timestamp" -> vertex.ts)
+        "id" -> id, "props" -> propsToJson(vertex),
+        "timestamp" -> vertex.ts,
+//        "belongsTo" -> vertex.belongLabelIds)
+        "belongsTo" -> vertex.belongLabelIds.flatMap(Label.findByIdOpt(_).map(_.label)))
     }
   }
 
@@ -335,7 +341,9 @@ object PostProcess extends JSONParser {
 
     val groupedEdgesWithRank = (for {
       queryResult <- queryResultLs
-      (edge, score) <- queryResult.edgeWithScoreLs if !excludeIds.contains(toHashKey(edge, queryResult.queryParam, queryResult.query.filterOutFields))
+      edgeWithScore <- queryResult.edgeWithScoreLs
+      (edge, score) = EdgeWithScore.unapply(edgeWithScore).get
+      if !excludeIds.contains(toHashKey(edge, queryResult.queryParam, queryResult.query.filterOutFields))
     } yield {
         (edge, score)
       }).groupBy { case (edge, score) =>

@@ -1,6 +1,6 @@
 package controllers
 
-import com.kakao.s2graph.logger
+import com.kakao.s2graph.core.utils.logger
 import play.api.libs.iteratee.Enumerator
 import play.api.libs.json.JsValue
 import play.api.mvc._
@@ -46,7 +46,7 @@ object ApplicationController extends Controller {
         if (isQueryRequest)
           s"${request.method} ${request.uri} took ${duration} ms ${result.header.status} ${resultSize} ${request.body}"
         else
-          s"${request.method} ${request.uri} took ${duration} ms ${result.header.status} ${resultSize}"
+          s"${request.method} ${request.uri} took ${duration} ms ${result.header.status} ${resultSize} ${request.body}"
 
       logger.info(s"${request.method} ${request.uri} result_size: $resultSize")
 
