@@ -1,3 +1,5 @@
+import com.typesafe.sbt.packager.docker._
+
 name := "s2graph"
 
 lazy val commonSettings = Seq(
@@ -34,3 +36,7 @@ libraryDependencies ++= Seq(
   "com.github.danielwegener" % "logback-kafka-appender" % "0.0.3",
   "org.json4s" %% "json4s-native" % "3.2.11" % Test
 )
+
+enablePlugins(JavaServerAppPackaging)
+enablePlugins(DockerPlugin)
+
