@@ -23,6 +23,7 @@ object Extensions {
     case i if n <= maxRetryNum =>
       fn recoverWith { case t: Throwable =>
         logger.info(s"retryOnFailure $n, $t")
+//        Thread.sleep(1000)
         retryOnFailure(maxRetryNum, n + 1)(fn)(fallback)
       }
     case _ =>

@@ -140,10 +140,10 @@ class StrongLabelDeleteSpec extends SpecCommon {
 
   "labelargeSet of contention" should {
     val labelName = testLabelName2
-    val maxTgtId = 100
-    val batchSize = 100
-    val testNum = 10
-    val numOfBatch = 100
+    val maxTgtId = 10
+    val batchSize = 10
+    val testNum = 3
+    val numOfBatch = 10
 
     def testInner(startTs: Long, src: Long) = {
       val labelName = testLabelName2

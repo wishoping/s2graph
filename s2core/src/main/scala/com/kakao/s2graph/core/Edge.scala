@@ -17,9 +17,7 @@ case class SnapshotEdge(srcVertex: Vertex,
                         op: Byte,
                         version: Long,
                         props: Map[Byte, InnerValLikeWithTs],
-                        pendingEdgeOpt: Option[Edge] = None,
-                        randomSeq: Long = 0L,
-                        lockTs: Long = System.currentTimeMillis()) extends JSONParser {
+                        lockTs: Option[Long]) extends JSONParser {
 
 
   //  logger.error(s"EdgeWithIndexInverted${this.toString}")
@@ -29,33 +27,13 @@ case class SnapshotEdge(srcVertex: Vertex,
   // only for toString.
   lazy val label = Label.findById(labelWithDir.labelId)
   lazy val propsWithoutTs = props.mapValues(_.innerVal)
-  //  lazy val valueBytes = kvs.head.value
 
-  //  def buildPut(): List[Put] = {
-  //    kvs.map { kv =>
-  //      val put = new Put(kv.row)
-  //      put.addColumn(kv.cf, kv.qualifier, kv.timestamp, kv.value)
-  //    }
-  ////    val put = new Put(rowKey.bytes)
-  ////    put.addColumn(edgeCf, qualifier.bytes, version, value.bytes)
-  //  }
 
-  def withNoPendingEdge() = copy(pendingEdgeOpt = None)
 
-  def withPendingEdge(pendingEdgeOpt: Option[Edge]) = copy(pendingEdgeOpt = pendingEdgeOpt)
 
   def toEdge: Edge = {
     val ts = props.get(LabelMeta.timeStampSeq).map(v => v.ts).getOrElse(version)
-    Edge(srcVertex, tgtVertex, labelWithDir, op, ts, version, props, pendingEdgeOpt, randomSeq = randomSeq, lockTs = lockTs)
-  }
-
-  def isSame(other: SnapshotEdge) = {
-    this.srcVertex.id == other.srcVertex.id &&
-    this.tgtVertex.id == other.tgtVertex.id &&
-    this.labelWithDir == other.labelWithDir &&
-    this.op == other.op &&
-    this.version == other.version &&
-    this.props == other.props
+    Edge(srcVertex, tgtVertex, labelWithDir, op, ts, version, props, lockTs = lockTs)
   }
 
   def propsWithName = for {
@@ -64,11 +42,13 @@ case class SnapshotEdge(srcVertex: Vertex,
     jsValue <- innerValToJsValue(v.innerVal, meta.dataType)
   } yield meta.name -> jsValue
 
+  def ts() = propsWithoutTs(LabelMeta.timeStampSeq)
+
   def toLogString() = {
     if (propsWithName.nonEmpty)
-      List(version, GraphUtil.fromOp(op), "e", srcVertex.innerId, tgtVertex.innerId, label.label, Json.toJson(propsWithName)).mkString("\t")
+      List(ts, version, GraphUtil.fromOp(op), "e", srcVertex.innerId, tgtVertex.innerId, label.label, Json.toJson(propsWithName), props).mkString("\t")
     else
-      List(version, GraphUtil.fromOp(op), "e", srcVertex.innerId, tgtVertex.innerId, label.label).mkString("\t")
+      List(ts, version, GraphUtil.fromOp(op), "e", srcVertex.innerId, tgtVertex.innerId, label.label).mkString("\t")
   }
 }
 
@@ -135,7 +115,7 @@ case class IndexEdge(srcVertex: Vertex,
 
   def toLogString() = {
     if (propsWithName.nonEmpty)
-      List(ts, GraphUtil.fromOp(op), "e", srcVertex.innerId, tgtVertex.innerId, label.label, Json.toJson(propsWithName)).mkString("\t")
+      List(ts, GraphUtil.fromOp(op), "e", srcVertex.innerId, tgtVertex.innerId, label.label, Json.toJson(propsWithName), props).mkString("\t")
     else
       List(ts, GraphUtil.fromOp(op), "e", srcVertex.innerId, tgtVertex.innerId, label.label).mkString("\t")
   }
@@ -148,11 +128,9 @@ case class Edge(srcVertex: Vertex,
                 ts: Long = System.currentTimeMillis(),
                 version: Long = System.currentTimeMillis(),
                 propsWithTs: Map[Byte, InnerValLikeWithTs] = Map.empty[Byte, InnerValLikeWithTs],
-                pendingEdgeOpt: Option[Edge] = None,
                 parentEdges: Seq[EdgeWithScore] = Nil,
                 originalEdgeOpt: Option[Edge] = None,
-                randomSeq: Long = Random.nextLong(),
-                lockTs: Long = System.currentTimeMillis()) extends GraphElement with JSONParser {
+                lockTs: Option[Long] = None) extends GraphElement with JSONParser {
 
   val schemaVer = label.schemaVersion
 
@@ -230,10 +208,10 @@ case class Edge(srcVertex: Vertex,
     val (smaller, larger) = (srcForVertex, tgtForVertex)
 
     val newLabelWithDir = LabelWithDirection(labelWithDir.labelId, GraphUtil.directions("out"))
+    val mergedProps = propsWithTs ++
+      Map(LabelMeta.timeStampSeq -> InnerValLikeWithTs(InnerVal.withLong(ts, schemaVer), ts))
 
-    val ret = SnapshotEdge(smaller, larger, newLabelWithDir, op, version, propsWithTs ++
-      Map(LabelMeta.timeStampSeq -> InnerValLikeWithTs(InnerVal.withLong(ts, schemaVer), ts)), pendingEdgeOpt,
-      randomSeq = randomSeq, lockTs = lockTs)
+    val ret = SnapshotEdge(smaller, larger, newLabelWithDir, op, version, mergedProps, lockTs = lockTs)
     ret
   }
 
@@ -289,7 +267,7 @@ case class Edge(srcVertex: Vertex,
 
   def toLogString: String = {
     if (propsWithName.nonEmpty)
-      List(ts, GraphUtil.fromOp(op), "e", srcVertex.innerId, tgtVertex.innerId, label.label, Json.toJson(propsWithName)).mkString("\t")
+      List(ts, GraphUtil.fromOp(op), "e", srcVertex.innerId, tgtVertex.innerId, label.label, Json.toJson(propsWithName), propsWithTs).mkString("\t")
     else
       List(ts, GraphUtil.fromOp(op), "e", srcVertex.innerId, tgtVertex.innerId, label.label).mkString("\t")
   }

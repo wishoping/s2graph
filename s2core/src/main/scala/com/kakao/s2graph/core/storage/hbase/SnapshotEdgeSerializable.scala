@@ -36,23 +36,9 @@ class SnapshotEdgeSerializable(snapshotEdge: SnapshotEdge) extends HSerializable
 
     val qualifier = tgtIdBytes
 
-    val value = snapshotEdge.pendingEdgeOpt match {
-      case None => valueBytes()
-      case Some(pendingEdge) =>
-        val opBytes = Array.fill(1)(snapshotEdge.op)
-        val versionBytes = Bytes.toBytes(snapshotEdge.version)
-        val propsBytes = propsToKeyValuesWithTs(pendingEdge.propsWithTs.toSeq)
-        val dummyBytes = Bytes.toBytes(snapshotEdge.lockTs)
-//        val dummyBytes = Bytes.toBytes(snapshotEdge.randomSeq)
-//          Bytes.toBytes(Random.nextLong())
-        //          Bytes.toBytes(System.nanoTime())
-        val pendingEdgeValueBytes = valueBytes()
+    val value = Bytes.add(valueBytes(), snapshotEdge.lockTs.map(Bytes.toBytes(_)).getOrElse(Array.empty[Byte]))
 
-        Bytes.add(Bytes.add(pendingEdgeValueBytes, opBytes, versionBytes),
-          Bytes.add(propsBytes, dummyBytes))
-    }
-
-    val kv = SKeyValue(table, row, cf, qualifier, value, snapshotEdge.version)
+    val kv = SKeyValue(table, row, cf, qualifier, value, System.currentTimeMillis())
     Seq(kv)
   }
 
@@ -79,9 +65,9 @@ class SnapshotEdgeSerializable(snapshotEdge: SnapshotEdge) extends HSerializable
 //
 //        Bytes.add(Bytes.add(pendingEdgeValueBytes, opBytes, versionBytes), propsBytes)
 //    }
-    val value = Bytes.add(valueBytes(), Bytes.toBytes(snapshotEdge.lockTs))
+    val value = Bytes.add(valueBytes(), snapshotEdge.lockTs.map(Bytes.toBytes(_)).getOrElse(Array.empty[Byte]))
 
-    val kv = SKeyValue(table, row, cf, qualifier, value, snapshotEdge.version)
+    val kv = SKeyValue(table, row, cf, qualifier, value, System.currentTimeMillis())
     Seq(kv)
   }
 }
