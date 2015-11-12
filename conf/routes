@@ -105,3 +105,6 @@ PUT         /graphs/loadCache                                             contro
 
 # Experiment API
 POST        /graphs/experiment/:accessToken/:experimentName/:uuid         controllers.ExperimentController.experiment(accessToken, experimentName, uuid)
+
+# General API
+POST        /api/:apiName/:uuid                                           controllers.ExperimentController.experiment(accessToken, apiName, uuid)
