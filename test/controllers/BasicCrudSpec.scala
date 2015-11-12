@@ -40,7 +40,7 @@ class BasicCrudSpec extends SpecCommon {
       for {
         label <- Label.findByName(labelName)
         direction <- List("out", "in")
-        cacheTTL <- List(1000L, 2000L)
+        cacheTTL <- List(-1)
       } {
         val (serviceName, columnName, id, otherId) = direction match {
           case "out" => (label.srcService.serviceName, label.srcColumn.columnName, srcId, tgtId)

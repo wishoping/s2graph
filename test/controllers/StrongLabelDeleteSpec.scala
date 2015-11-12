@@ -154,21 +154,21 @@ class StrongLabelDeleteSpec extends SpecCommon {
         ith <- (0 until numOfBatch)
         jth <- (0 until batchSize)
       } yield {
-          currentTs += 1
+        currentTs += 1
 
-          val tgt = Random.nextInt(maxTgtId)
-          val op = if (Random.nextDouble() < 0.5) "delete" else "update"
+        val tgt = Random.nextInt(maxTgtId)
+        val op = if (Random.nextDouble() < 0.5) "delete" else "update"
 
-          lastOps(tgt) = op
-          Seq(currentTs, op, "e", src, src + tgt, labelName, "{}").mkString("\t")
-        }
+        lastOps(tgt) = op
+        Seq(currentTs, op, "e", src, src + tgt, labelName, "{}").mkString("\t")
+      }
 
 
-//      allRequests.foreach(println(_))
-//      println(lastOps.count(op => op != "delete" && op != "none"))
-//      println(lastOps)
-//
-//      Thread.sleep(10000)
+      //      allRequests.foreach(println(_))
+      //      println(lastOps.count(op => op != "delete" && op != "none"))
+      //      println(lastOps)
+      //
+      //      Thread.sleep(10000)
 
       val futures = Random.shuffle(allRequests).grouped(batchSize).map { bulkRequest =>
         val bulkEdge = bulkRequest.mkString("\n")
@@ -197,12 +197,12 @@ class StrongLabelDeleteSpec extends SpecCommon {
         val ret = for {
           i <- (0 until testNum)
         } yield {
-            val src = System.currentTimeMillis()
+          val src = System.currentTimeMillis()
 
-            val (ret, last) = testInner(i, src)
-            ret must beEqualTo(true)
-            ret
-          }
+          val (ret, last) = testInner(i, src)
+          ret must beEqualTo(true)
+          ret
+        }
 
         ret.forall(identity)
       }
@@ -216,35 +216,35 @@ class StrongLabelDeleteSpec extends SpecCommon {
         val ret = for {
           i <- (0 until testNum)
         } yield {
-            val (ret, lastTs) = testInner(ts, src)
-            val deletedAt = lastTs + 1
-            val deletedAt2 = lastTs + 2
-            ts = deletedAt2 + 1 // nex start ts
+          val (ret, lastTs) = testInner(ts, src)
+          val deletedAt = lastTs + 1
+          val deletedAt2 = lastTs + 2
+          ts = deletedAt2 + 1 // nex start ts
 
-            ret must beEqualTo(true)
+          ret must beEqualTo(true)
 
-            logger.error(s"delete timestamp: $deletedAt")
+          logger.error(s"delete timestamp: $deletedAt")
 
-            val deleteAllRequest = Json.arr(Json.obj("label" -> labelName, "ids" -> Json.arr(src), "timestamp" -> deletedAt))
-            val deleteAllRequest2 = Json.arr(Json.obj("label" -> labelName, "ids" -> Json.arr(src), "timestamp" -> deletedAt2))
+          val deleteAllRequest = Json.arr(Json.obj("label" -> labelName, "ids" -> Json.arr(src), "timestamp" -> deletedAt))
+          val deleteAllRequest2 = Json.arr(Json.obj("label" -> labelName, "ids" -> Json.arr(src), "timestamp" -> deletedAt2))
 
-            val deleteRet = EdgeController.deleteAllInner(deleteAllRequest, withWait = true)
-            val deleteRet2 = EdgeController.deleteAllInner(deleteAllRequest2, withWait = true)
+          val deleteRet = EdgeController.deleteAllInner(deleteAllRequest, withWait = true)
+          val deleteRet2 = EdgeController.deleteAllInner(deleteAllRequest2, withWait = true)
 
-            contentAsString(deleteRet)
-            contentAsString(deleteRet2)
+          contentAsString(deleteRet)
+          contentAsString(deleteRet2)
 
-            val result = getEdges(query(id = src))
-            println(result)
+          val result = getEdges(query(id = src))
+          println(result)
 
-            val resultEdges = (result \ "results").as[Seq[JsValue]]
-            logger.error(Json.toJson(resultEdges).toString)
-            resultEdges.isEmpty must beEqualTo(true)
+          val resultEdges = (result \ "results").as[Seq[JsValue]]
+          logger.error(Json.toJson(resultEdges).toString)
+          resultEdges.isEmpty must beEqualTo(true)
 
-            val degreeAfterDeleteAll = getDegree(result)
-            degreeAfterDeleteAll must beEqualTo(0)
-            true
-          }
+          val degreeAfterDeleteAll = getDegree(result)
+          degreeAfterDeleteAll must beEqualTo(0)
+          true
+        }
 
         ret.forall(identity)
       }
@@ -292,44 +292,44 @@ class StrongLabelDeleteSpec extends SpecCommon {
         ret must beEqualTo(true)
       }
     }
-
-    "deleteAll" in {
-      running(FakeApplication()) {
-        val labelName = testLabelName2
-        val dir = "out"
-        val maxSize = 100
-        val deleteSize = 10
-        val numOfConcurrentBatch = 100
-        val src = System.currentTimeMillis()
-        val tgts = (0 until maxSize).map { ith => src + ith }
-        val deleteTgts = Random.shuffle(tgts).take(deleteSize)
-        val insertRequests = tgts.map { tgt =>
-          Seq(tgt, "insert", "e", src, tgt, labelName, "{}", dir).mkString("\t")
-        }
-        val deleteRequests = deleteTgts.take(deleteSize).map { tgt =>
-          Seq(tgt + 1000, "delete", "e", src, tgt, labelName, "{}", dir).mkString("\t")
-        }
-        val allRequests = Random.shuffle(insertRequests ++ deleteRequests)
-        //        val allRequests = insertRequests ++ deleteRequests
-        val futures = allRequests.grouped(numOfConcurrentBatch).map { requests =>
-          EdgeController.mutateAndPublish(requests.mkString("\n"), withWait = true)
-        }
-        Await.result(Future.sequence(futures), Duration(10, TimeUnit.MINUTES))
-
-        val deletedAt = System.currentTimeMillis()
-        val deleteAllRequest = Json.arr(Json.obj("label" -> labelName, "ids" -> Json.arr(src), "timestamp" -> deletedAt))
-
-        contentAsString(EdgeController.deleteAllInner(deleteAllRequest, withWait = true))
-
-        val result = getEdges(query(id = src))
-        println(result)
-        val resultEdges = (result \ "results").as[Seq[JsValue]]
-        resultEdges.isEmpty must beEqualTo(true)
-
-        val degreeAfterDeleteAll = getDegree(result)
-        degreeAfterDeleteAll must beEqualTo(0)
-      }
-    }
+    //
+    //    "deleteAll" in {
+    //      running(FakeApplication()) {
+    //        val labelName = testLabelName2
+    //        val dir = "out"
+    //        val maxSize = 100
+    //        val deleteSize = 10
+    //        val numOfConcurrentBatch = 100
+    //        val src = System.currentTimeMillis()
+    //        val tgts = (0 until maxSize).map { ith => src + ith }
+    //        val deleteTgts = Random.shuffle(tgts).take(deleteSize)
+    //        val insertRequests = tgts.map { tgt =>
+    //          Seq(tgt, "insert", "e", src, tgt, labelName, "{}", dir).mkString("\t")
+    //        }
+    //        val deleteRequests = deleteTgts.take(deleteSize).map { tgt =>
+    //          Seq(tgt + 1000, "delete", "e", src, tgt, labelName, "{}", dir).mkString("\t")
+    //        }
+    //        val allRequests = Random.shuffle(insertRequests ++ deleteRequests)
+    //        //        val allRequests = insertRequests ++ deleteRequests
+    //        val futures = allRequests.grouped(numOfConcurrentBatch).map { requests =>
+    //          EdgeController.mutateAndPublish(requests.mkString("\n"), withWait = true)
+    //        }
+    //        Await.result(Future.sequence(futures), Duration(10, TimeUnit.MINUTES))
+    //
+    //        val deletedAt = System.currentTimeMillis()
+    //        val deleteAllRequest = Json.arr(Json.obj("label" -> labelName, "ids" -> Json.arr(src), "timestamp" -> deletedAt))
+    //
+    //        contentAsString(EdgeController.deleteAllInner(deleteAllRequest, withWait = true))
+    //
+    //        val result = getEdges(query(id = src))
+    //        println(result)
+    //        val resultEdges = (result \ "results").as[Seq[JsValue]]
+    //        resultEdges.isEmpty must beEqualTo(true)
+    //
+    //        val degreeAfterDeleteAll = getDegree(result)
+    //        degreeAfterDeleteAll must beEqualTo(0)
+    //      }
+    //    }
   }
 }
 

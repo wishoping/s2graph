@@ -22,9 +22,7 @@ object CanSKeyValue {
   }
 
   implicit val sKeyValue = new CanSKeyValue[SKeyValue] {
-    def toSKeyValue(kv: SKeyValue): SKeyValue = {
-      kv
-    }
+    def toSKeyValue(kv: SKeyValue): SKeyValue = kv
   }
 
   // For hbase KeyValues
