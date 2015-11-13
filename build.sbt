@@ -38,6 +38,9 @@ libraryDependencies ++= Seq(
 )
 
 enablePlugins(JavaServerAppPackaging)
+
 enablePlugins(DockerPlugin)
 
 dockerBaseImage := "isuper/java-oracle"
+
+dockerExposedPorts := Seq(9000)
