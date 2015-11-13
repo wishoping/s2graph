@@ -3,8 +3,7 @@
 docker run \
 	--name graph_mysql \
 	-e MYSQL_ROOT_PASSWORD=graph \
-	-p 3306:3306\
-	--net host \
+	--net container:graph_hbase \
 	-d \
 	graph_mysql
 
