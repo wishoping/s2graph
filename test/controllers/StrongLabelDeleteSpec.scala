@@ -147,115 +147,115 @@ class StrongLabelDeleteSpec extends SpecCommon {
     val labelName = testLabelName2
     val maxTgtId = 10
     val batchSize = 10
-    val testNum = 10
+    val testNum = 3
     val numOfBatch = 10
 
-    def testInner(startTs: Long, src: Long) = {
-      val labelName = testLabelName2
-      val lastOps = Array.fill(maxTgtId)("none")
-      var currentTs = startTs
-
-      val allRequests = for {
-        ith <- (0 until numOfBatch)
-        jth <- (0 until batchSize)
-      } yield {
-          currentTs += 1
-
-          val tgt = Random.nextInt(maxTgtId)
-          val op = if (Random.nextDouble() < 0.5) "delete" else "update"
-
-          lastOps(tgt) = op
-          Seq(currentTs, op, "e", src, src + tgt, labelName, "{}").mkString("\t")
-        }
-
-
-      allRequests.foreach(println(_))
-//      println(lastOps.count(op => op != "delete" && op != "none"))
-//      println(lastOps)
+//    def testInner(startTs: Long, src: Long) = {
+//      val labelName = testLabelName2
+//      val lastOps = Array.fill(maxTgtId)("none")
+//      var currentTs = startTs
 //
-//      Thread.sleep(1000)
+//      val allRequests = for {
+//        ith <- (0 until numOfBatch)
+//        jth <- (0 until batchSize)
+//      } yield {
+//          currentTs += 1
+//
+//          val tgt = Random.nextInt(maxTgtId)
+//          val op = if (Random.nextDouble() < 0.5) "delete" else "update"
+//
+//          lastOps(tgt) = op
+//          Seq(currentTs, op, "e", src, src + tgt, labelName, "{}").mkString("\t")
+//        }
+//
+//
+//      allRequests.foreach(println(_))
+////      println(lastOps.count(op => op != "delete" && op != "none"))
+////      println(lastOps)
+////
+////      Thread.sleep(1000)
+//
+//      val futures = Random.shuffle(allRequests).grouped(batchSize).map { bulkRequest =>
+//        val bulkEdge = bulkRequest.mkString("\n")
+//        EdgeController.mutateAndPublish(bulkEdge, withWait = true)
+//      }
+//
+//      Await.result(Future.sequence(futures), Duration(20, TimeUnit.MINUTES))
+//
+//      val expectedDegree = lastOps.count(op => op != "delete" && op != "none")
+//      val queryJson = query(id = src)
+//      val result = getEdges(queryJson)
+//      val resultSize = (result \ "size").as[Long]
+//      val resultDegree = getDegree(result)
+//
+//      println(lastOps.toList)
+//      println(result)
+//
+//      val ret = resultDegree == expectedDegree && resultSize == resultDegree
+//      if (!ret) System.err.println(s"[Contention Failed]: $resultDegree, $expectedDegree")
+//
+//      (ret, currentTs)
+//    }
 
-      val futures = Random.shuffle(allRequests).grouped(batchSize).map { bulkRequest =>
-        val bulkEdge = bulkRequest.mkString("\n")
-        EdgeController.mutateAndPublish(bulkEdge, withWait = true)
-      }
+//    "update delete" in {
+//      running(FakeApplication()) {
+//        val ret = for {
+//          i <- (0 until testNum)
+//        } yield {
+//            val src = System.currentTimeMillis()
+//
+//            val (ret, last) = testInner(i, src)
+//            ret must beEqualTo(true)
+//            ret
+//          }
+//
+//        ret.forall(identity)
+//      }
+//    }
 
-      Await.result(Future.sequence(futures), Duration(20, TimeUnit.MINUTES))
-
-      val expectedDegree = lastOps.count(op => op != "delete" && op != "none")
-      val queryJson = query(id = src)
-      val result = getEdges(queryJson)
-      val resultSize = (result \ "size").as[Long]
-      val resultDegree = getDegree(result)
-
-      println(lastOps.toList)
-      println(result)
-
-      val ret = resultDegree == expectedDegree && resultSize == resultDegree
-      if (!ret) System.err.println(s"[Contention Failed]: $resultDegree, $expectedDegree")
-
-      (ret, currentTs)
-    }
-
-    "update delete" in {
-      running(FakeApplication()) {
-        val ret = for {
-          i <- (0 until testNum)
-        } yield {
-            val src = System.currentTimeMillis()
-
-            val (ret, last) = testInner(i, src)
-            ret must beEqualTo(true)
-            ret
-          }
-
-        ret.forall(identity)
-      }
-    }
-
-    "update delete 2" in {
-      running(FakeApplication()) {
-
-        val src = System.currentTimeMillis()
-        var ts = 0L
-
-        val ret = for {
-          i <- (0 until testNum)
-        } yield {
-            val (ret, lastTs) = testInner(ts, src)
-            val deletedAt = lastTs + 1
-            val deletedAt2 = lastTs + 2
-            ts = deletedAt2 + 1 // nex start ts
-
-            ret must beEqualTo(true)
-
-            logger.error(s"delete timestamp: $deletedAt")
-
-            val deleteAllRequest = Json.arr(Json.obj("label" -> labelName, "ids" -> Json.arr(src), "timestamp" -> deletedAt))
-            val deleteAllRequest2 = Json.arr(Json.obj("label" -> labelName, "ids" -> Json.arr(src), "timestamp" -> deletedAt2))
-
-            val deleteRet = EdgeController.deleteAllInner(deleteAllRequest, withWait = true)
-            val deleteRet2 = EdgeController.deleteAllInner(deleteAllRequest2, withWait = true)
-
-
-            Await.result(deleteRet, Duration(20, TimeUnit.MINUTES))
-            Await.result(deleteRet2, Duration(20, TimeUnit.MINUTES))
-
-            val result = getEdges(query(id = src))
-            println(result)
-
-            val resultEdges = (result \ "results").as[Seq[JsValue]]
-            logger.error(Json.toJson(resultEdges).toString)
-            resultEdges.isEmpty must beEqualTo(true)
-
-            val degreeAfterDeleteAll = getDegree(result)
-            degreeAfterDeleteAll must beEqualTo(0)
-            true
-          }
-
-        ret.forall(identity)
-      }
-    }
+//    "update delete 2" in {
+//      running(FakeApplication()) {
+//
+//        val src = System.currentTimeMillis()
+//        var ts = 0L
+//
+//        val ret = for {
+//          i <- (0 until testNum)
+//        } yield {
+//            val (ret, lastTs) = testInner(ts, src)
+//            val deletedAt = lastTs + 1
+//            val deletedAt2 = lastTs + 2
+//            ts = deletedAt2 + 1 // nex start ts
+//
+//            ret must beEqualTo(true)
+//
+//            logger.error(s"delete timestamp: $deletedAt")
+//
+//            val deleteAllRequest = Json.arr(Json.obj("label" -> labelName, "ids" -> Json.arr(src), "timestamp" -> deletedAt))
+//            val deleteAllRequest2 = Json.arr(Json.obj("label" -> labelName, "ids" -> Json.arr(src), "timestamp" -> deletedAt2))
+//
+//            val deleteRet = EdgeController.deleteAllInner(deleteAllRequest, withWait = true)
+//            val deleteRet2 = EdgeController.deleteAllInner(deleteAllRequest2, withWait = true)
+//
+//
+//            Await.result(deleteRet, Duration(20, TimeUnit.MINUTES))
+//            Await.result(deleteRet2, Duration(20, TimeUnit.MINUTES))
+//
+//            val result = getEdges(query(id = src))
+//            println(result)
+//
+//            val resultEdges = (result \ "results").as[Seq[JsValue]]
+//            logger.error(Json.toJson(resultEdges).toString)
+//            resultEdges.isEmpty must beEqualTo(true)
+//
+//            val degreeAfterDeleteAll = getDegree(result)
+//            degreeAfterDeleteAll must beEqualTo(0)
+//            true
+//          }
+//
+//        ret.forall(identity)
+//      }
+//    }
 
     /** this test stress out test on degree
       * when contention is low but number of adjacent edges are large */
@@ -265,8 +265,8 @@ class StrongLabelDeleteSpec extends SpecCommon {
 
         val labelName = testLabelName2
         val dir = "out"
-        val maxSize = 100
-        val deleteSize = 10
+        val maxSize = 10000
+        val deleteSize = 1000
         val numOfConcurrentBatch = 100
         val src = System.currentTimeMillis()
         val tgts = (0 until maxSize).map { ith => src + ith }
@@ -307,8 +307,8 @@ class StrongLabelDeleteSpec extends SpecCommon {
 
         val labelName = testLabelName2
         val dir = "out"
-        val maxSize = 100
-        val deleteSize = 10
+        val maxSize = 10000
+        val deleteSize = 1000
         val numOfConcurrentBatch = 100
         val src = System.currentTimeMillis()
         val tgts = (0 until maxSize).map { ith => src + ith }
