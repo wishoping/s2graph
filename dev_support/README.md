@@ -3,7 +3,7 @@
 1. Build s2graph docker image in root of project directory
 	- `sbt docker:publishLocal`
 2. Run MySQL and HBase container first.
-```
+	- ```
 cd dev-support
 docker-compose up -d graph_mysql
 ```
