@@ -1,7 +1,7 @@
 # Dev-support using Docker
 
 1. Build s2graph docker image in root of project directory
-`sbt docker:publishLocal`
+	- `sbt docker:publishLocal`
 2. Run MySQL and HBase container first.
 	- change directory to dev-support. `cd dev-support`
 	- `docker-compose up -d graph_mysql` will run MySQL and HBase at same time.
