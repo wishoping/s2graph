@@ -44,7 +44,9 @@ object AsynchbaseStorage {
   }
 }
 
-class AsynchbaseStorage(config: Config, cache: Cache[Integer, Seq[QueryResult]], vertexCache: Cache[Integer, Option[Vertex]])
+class AsynchbaseStorage(config: Config,
+                        cache: Cache[java.lang.Long, Seq[QueryResult]],
+                        vertexCache: Cache[java.lang.Long, Option[Vertex]])
                        (implicit ec: ExecutionContext) extends Storage {
 
   import AsynchbaseStorage._

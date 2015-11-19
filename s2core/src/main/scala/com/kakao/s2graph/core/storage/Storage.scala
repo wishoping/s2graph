@@ -11,9 +11,9 @@ import scala.concurrent.{ExecutionContext, Future}
 
 abstract class Storage(implicit ec: ExecutionContext) {
 
-  def cacheOpt: Option[Cache[Integer, Seq[QueryResult]]]
+  def cacheOpt: Option[Cache[java.lang.Long, Seq[QueryResult]]]
 
-  def vertexCacheOpt: Option[Cache[Integer, Option[Vertex]]]
+  def vertexCacheOpt: Option[Cache[java.lang.Long, Option[Vertex]]]
 
   // Serializer/Deserializer
   def snapshotEdgeSerializer(snapshotEdge: SnapshotEdge): StorageSerializable[SnapshotEdge]

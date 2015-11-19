@@ -303,8 +303,8 @@ object Graph {
 class Graph(_config: Config)(implicit ec: ExecutionContext) {
   val config = _config.withFallback(Graph.DefaultConfig)
   val cacheSize = config.getInt("cache.max.size")
-  val cache = CacheBuilder.newBuilder().maximumSize(cacheSize).build[java.lang.Integer, Seq[QueryResult]]()
-  val vertexCache = CacheBuilder.newBuilder().maximumSize(cacheSize).build[java.lang.Integer, Option[Vertex]]()
+  val cache = CacheBuilder.newBuilder().maximumSize(cacheSize).build[java.lang.Long, Seq[QueryResult]]()
+  val vertexCache = CacheBuilder.newBuilder().maximumSize(cacheSize).build[java.lang.Long, Option[Vertex]]()
 
   Model(config)
 
