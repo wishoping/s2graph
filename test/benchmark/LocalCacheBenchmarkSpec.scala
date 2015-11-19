@@ -23,18 +23,23 @@ class LocalCacheBenchmarkSpec extends SpecCommon with BenchmarkCommon with PlayS
         val vertex = Vertex(vertexId)
         val labelWithDir = LabelWithDirection(label.id.get, 0)
         val ts = System.currentTimeMillis()
-        val propsWithTs = Map(LabelMeta.timeStampSeq ->
-          InnerValLikeWithTs.withLong(ts, ts, label.schemaVersion),
-          1.toByte -> InnerValLikeWithTs.withLong(ts, ts, label.schemaVersion),
-          2.toByte -> InnerValLikeWithTs.withLong(ts, ts, label.schemaVersion)
-        )
+
+        val maxSize = 1000000
+        val numOfKey = maxSize * 10
+        val numOfVal = 1000
+        val numOfProps = 10
+
+        val extraPropsWithTs = (1 to numOfProps).map { ith => ith.toByte -> InnerValLikeWithTs.withLong(ts, ts, label.schemaVersion)} toMap
+        val propsWithTs = Map(LabelMeta.timeStampSeq -> InnerValLikeWithTs.withLong(ts, ts, label.schemaVersion)) ++ extraPropsWithTs
+
         val edge = Edge(vertex, vertex, labelWithDir, propsWithTs = propsWithTs)
         val queryParam = QueryParam(labelWithDir)
         val query = Query.toQuery(Seq(vertex), queryParam)
 
-        val maxSize = 100000
-        val numOfKey = maxSize * 10
-        val numOfVal = 1000
+
+
+        var avg = 0.0
+        var cnt = 0
         val config = ConfigFactory.parseString(s"cache.max.size=${maxSize}").withFallback(Graph.DefaultConfig)
         val graph = new Graph(config)
         val cache = graph.storage.cacheOpt.get
@@ -52,9 +57,11 @@ class LocalCacheBenchmarkSpec extends SpecCommon with BenchmarkCommon with PlayS
         for {
           i <- (0 until numOfKey)
         } {
+          avg += queryResult.edgeWithScoreLs.size
+          cnt += 1
           cache.put(i, Seq(queryResult))
         }
-        println(s"${cache.size()}")
+        println(s"${cache.size()} : ${avg / cnt}")
         val endMemory = runtime.totalMemory() - runtime.freeMemory()
         println(s"Usaged memory for key[$numOfKey], value[$numOfVal]: ${endMemory - startMemory}")
         true
