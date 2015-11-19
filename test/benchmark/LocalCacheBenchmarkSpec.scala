@@ -8,6 +8,8 @@ import com.typesafe.config.ConfigFactory
 import controllers.SpecCommon
 import play.api.test.{FakeApplication, FakeRequest, PlaySpecification}
 
+import scala.collection.mutable
+
 class LocalCacheBenchmarkSpec extends SpecCommon with BenchmarkCommon with PlaySpecification {
 
 
@@ -93,6 +95,7 @@ class LocalCacheBenchmarkSpec extends SpecCommon with BenchmarkCommon with PlayS
         val cache = graph.storage.cacheOpt.get
         val queryBuilder = new AsynchbaseQueryBuilder(graph.storage.asInstanceOf[AsynchbaseStorage])
 
+        val set = new mutable.HashSet[Long]()
         println(Console.GREEN +"This takes long so go get a cup of coffee.")
         for {
           i <- (0 until numOfKey)
@@ -104,12 +107,8 @@ class LocalCacheBenchmarkSpec extends SpecCommon with BenchmarkCommon with PlayS
           val queryRequest = getQueryRequest(query, queryParam, i)
           val request = queryBuilder.buildRequest(queryRequest)
           val cacheKey = queryParam.toCacheKey(queryBuilder.toCacheKeyBytes(request))
-          val cacheVal = cache.getIfPresent(cacheKey)
-          if (cacheVal == null) {
-            cache.put(cacheKey, Seq(queryResult))
-          } else {
-            collision += 1
-          }
+          if (set.contains(cacheKey)) collision += 1
+          else set += cacheKey
         }
         println(Console.GREEN + "=" * 50)
         println(Console.GREEN + s"Collision for ${numOfKey}: ${collision}")
