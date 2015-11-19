@@ -99,7 +99,7 @@ class LocalCacheBenchmarkSpec extends SpecCommon with BenchmarkCommon with PlayS
         } {
           if (i % stepSize == 0) {
             println(Console.GREEN +
-              s">>${i * 100 / numOfKey}% processed: key[$i], collision[$collision]")
+              s">>${i * 100L / numOfKey}% processed: key[$i], collision[$collision]")
           }
           val queryRequest = getQueryRequest(query, queryParam, i)
           val request = queryBuilder.buildRequest(queryRequest)
