@@ -37,7 +37,7 @@ object Graph {
     "hbase.rpc.timeout" -> java.lang.Integer.valueOf(1000),
     "max.retry.number" -> java.lang.Integer.valueOf(100),
     "max.back.off" -> java.lang.Integer.valueOf(50),
-    "delete.all.fetch.size" -> java.lang.Integer.valueOf(100000),
+    "delete.all.fetch.size" -> java.lang.Integer.valueOf(50000),
     "hbase.fail.prob" -> java.lang.Double.valueOf(-1.0)
   )
 
