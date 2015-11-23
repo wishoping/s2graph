@@ -1,12 +1,13 @@
 package benchmark
 
-import com.kakao.s2graph.core.{Management, GraphUtil}
+import com.kakao.s2graph.core.{Graph, Management, GraphUtil}
 import com.kakao.s2graph.core.types.{SourceVertexId, HBaseType, InnerVal, VertexId}
 import org.apache.hadoop.hbase.util.Bytes
 import play.api.test.{FakeApplication, PlaySpecification}
 
 import scala.collection.mutable
 import scala.collection.mutable.ListBuffer
+import scala.io.Source
 import scala.util.Random
 
 class GraphUtilSpec extends BenchmarkCommon with PlaySpecification {
@@ -50,7 +51,7 @@ class GraphUtilSpec extends BenchmarkCommon with PlaySpecification {
       running(FakeApplication()) {
         import HBaseType._
         val testNum = 1000000L
-        val regionCount = 40
+        val regionCount = 10
         val window = Int.MaxValue / regionCount
         val rangeBytes = new ListBuffer[(List[Byte], List[Byte])]()
         for {
@@ -67,10 +68,12 @@ class GraphUtilSpec extends BenchmarkCommon with PlaySpecification {
         val counts = new collection.mutable.HashMap[Short, Long]()
         stats += (0 -> (rangeBytes.head -> 0L))
 
-        for (i <- (0L until testNum)) {
-          val vertexId = SourceVertexId(DEFAULT_COL_ID, InnerVal.withLong(i, HBaseType.DEFAULT_VERSION))
-          val bytes = vertexId.bytes
-          val shortKey = GraphUtil.murmur3(vertexId.innerId.toIdString())
+        for {
+          line <- Source.fromFile("data.in").getLines()
+          edge <- Graph.toEdge(line)
+        } {
+          val bytes = edge.srcVertex.id.bytes
+          val shortKey = GraphUtil.murmur3(edge.srcVertex.id.innerId.toIdString())
           val shortVal = counts.getOrElse(shortKey, 0L) + 1L
           counts += (shortKey -> shortVal)
           var j = 0
@@ -90,6 +93,10 @@ class GraphUtilSpec extends BenchmarkCommon with PlaySpecification {
           }
           stats += (key -> (head, value))
         }
+//        for (i <- (0L until testNum)) {
+//          val vertexId = SourceVertexId(DEFAULT_COL_ID, InnerVal.withLong(i, HBaseType.DEFAULT_VERSION))
+//
+//        }
         val sorted = stats.toList.sortBy(kv => kv._2._2).reverse
         println(s"Index: StartBytes ~ EndBytes\tStartShortBytes ~ EndShortBytes\tStartShort ~ EndShort\tCount\tShortCount")
         sorted.foreach { case (idx, ((start, end), cnt)) =>
