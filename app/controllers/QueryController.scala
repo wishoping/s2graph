@@ -4,6 +4,7 @@ package controllers
 import com.kakao.s2graph.core.GraphExceptions.BadQueryException
 import com.kakao.s2graph.core._
 import com.kakao.s2graph.core.mysqls._
+import com.kakao.s2graph.core.storage.hbase.AsynchbaseStorage
 import com.kakao.s2graph.core.types.{LabelWithDirection, VertexId}
 import com.kakao.s2graph.core.utils.logger
 import config.Config
@@ -305,5 +306,13 @@ object QueryController extends Controller with RequestParser {
         logger.error(s"$jsonQuery, $e", e)
         errorResults
     } get
+  }
+
+  /** temp */
+  def runScanner(labelName: String) = Action {
+    val startKey = Array(62, -18, -18, -21).map(_.toByte)
+    val endKey = Array(63, -1, -1, -4).map(_.toByte)
+    s2.storage.asInstanceOf[AsynchbaseStorage].testScanner(labelName)
+    Ok("")
   }
 }

@@ -1,5 +1,6 @@
 package com.kakao.s2graph.core.storage.hbase
 
+import java.io.{File, PrintWriter}
 import java.util
 
 import com.google.common.cache.Cache
@@ -11,6 +12,8 @@ import com.kakao.s2graph.core.types._
 import com.kakao.s2graph.core.utils.{Extensions, logger}
 import com.stumbleupon.async.Deferred
 import com.typesafe.config.Config
+import org.apache.hadoop.hbase.TableName
+import org.apache.hadoop.hbase.util.Bytes
 import org.hbase.async._
 
 import scala.collection.JavaConversions._
@@ -732,4 +735,71 @@ class AsynchbaseStorage(config: Config, cache: Cache[Integer, Seq[QueryResult]],
     Await.result(client.flush().toFuture, timeout)
   }
 
+  def testScanner(labelName: String) = {
+    val label = Label.findByName(labelName).getOrElse(throw new Exception("!!"))
+    val tableName = label.hbaseTableName
+    val labelWithDirOut = LabelWithDirection(label.id.get, 0)
+    val labelWithDirIn = LabelWithDirection(label.id.get, 1)
+    val queryParamOut = QueryParam(labelWithDirOut)
+    val queryParamIn = QueryParam(labelWithDirIn)
+
+    def printToFile(f: java.io.File)(op: java.io.PrintWriter => Unit) {
+      val p = new java.io.PrintWriter(f)
+      try { op(p) } finally { p.close() }
+    }
+
+    def scanRegion(zkAddr: String, tableName: String) = {
+      val regions = Management.getAdmin(zkAddr).getTableRegions(TableName.valueOf(tableName))
+      val iter = regions.iterator()
+      printToFile(new File("region/data.txt")) { p =>
+        while (iter.hasNext) {
+          val region = iter.next()
+          val regionName = region.getRegionNameAsString.split(",").last
+          val info = Map("regionName" -> regionName,
+            "startKey" -> region.getStartKey.toList,
+            "endKey" -> region.getEndKey.toList
+          )
+          var scanner: Scanner = null
+          try {
+            scanner = client.newScanner(tableName)
+            scanner.setFamily("e")
+            scanner.setStartKey(region.getStartKey)
+            scanner.setStopKey(region.getEndKey)
+
+            scanner.nextRows().toFuture.map { kvsLs =>
+              for {
+                kvs <- kvsLs
+                kv <- kvs
+              } {
+                //            logger.error(s"$kv")
+                val edgeOut =
+                  if (kv.key().last == 2) toEdge(kv, queryParamOut, None, Nil)
+                  else toSnapshotEdge(kv, queryParamOut, None, true, Nil)
+                val edgeIn =
+                  if (kv.key().last == 2) toEdge(kv, queryParamIn, None, Nil)
+                  else toSnapshotEdge(kv, queryParamIn, None, true, Nil)
+
+                if (edgeOut.isDefined) {
+                  val s = s"${regionName}\t${edgeOut.get.toLogString2}"
+                  logger.info(s)
+//                  println(s)
+                }
+                if (edgeIn.isDefined) {
+                  val s = s"${regionName}\t${edgeIn.get.toLogString2}"
+                  logger.info(s)
+//                  println(s)
+                }
+
+              }
+            }
+          } finally {
+            if (scanner != null) scanner.close()
+          }
+        }
+      }
+    }
+
+
+    scanRegion(label.hbaseZkAddr, tableName)
+  }
 }

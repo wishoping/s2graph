@@ -273,6 +273,17 @@ case class Edge(srcVertex: Vertex,
 
     ret.mkString("\t")
   }
+  def toLogString2: String = {
+    val (srcId, tgtId) =
+      if (labelWithDir.dir == GraphUtil.directions("in")) (tgtVertex.innerId, srcVertex.innerId)
+      else (srcVertex.innerId, tgtVertex.innerId)
+
+    val ret =
+      List(ts, GraphUtil.fromOp(op), "e", srcId, tgtId, label.label, Json.toJson(propsWithName), GraphUtil.fromDirection(labelWithDir.dir))
+
+
+    ret.mkString("\t")
+  }
 }
 
 case class EdgeMutate(edgesToDelete: List[IndexEdge] = List.empty[IndexEdge],
