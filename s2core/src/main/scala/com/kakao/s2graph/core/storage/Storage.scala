@@ -11,7 +11,7 @@ import scala.concurrent.{ExecutionContext, Future}
 
 abstract class Storage(implicit ec: ExecutionContext) {
 
-  def cacheOpt: Option[SCache[QueryRequest, Seq[QueryResult]]]
+  def cacheOpt: Option[SCache[QueryRequest, Future[Seq[QueryResult]]]]
 
   def vertexCacheOpt: Option[Cache[java.lang.Long, Option[Vertex]]]
 

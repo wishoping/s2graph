@@ -90,7 +90,7 @@ class AsynchbaseStorage(config: Config, vertexCache: Cache[java.lang.Long, Optio
   def checkEdges(params: Seq[(Vertex, Vertex, QueryParam)]): Future[Seq[QueryRequestWithResult]] = {
     val futures = for {
       (srcVertex, tgtVertex, queryParam) <- params
-    } yield queryBuilder.getEdge(srcVertex, tgtVertex, queryParam, false).toFuture
+    } yield queryBuilder.getEdge(srcVertex, tgtVertex, queryParam, false)
 
     Future.sequence(futures)
   }
