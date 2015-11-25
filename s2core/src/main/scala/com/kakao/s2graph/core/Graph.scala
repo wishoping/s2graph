@@ -137,7 +137,7 @@ object Graph {
       (duplicateEdge, aggregatedScore) <- fetchDuplicatedEdges(edge, score, hashKey, duplicateEdges) if aggregatedScore >= queryParam.threshold
     } yield EdgeWithScore(duplicateEdge, aggregatedScore)
 
-    QueryRequestWithResult(queryRequest, QueryResult(edgesWithScores))
+    QueryRequestWithResult(queryRequest, QueryResult(edgesWithScores, timestamp = queryResult.timestamp))
   }
 
   def fetchDuplicatedEdges(edge: Edge,
@@ -309,13 +309,13 @@ object Graph {
 class Graph(_config: Config)(implicit ec: ExecutionContext) {
   val config = _config.withFallback(Graph.DefaultConfig)
   val cacheSize = config.getInt("cache.max.size")
-  val cache = CacheBuilder.newBuilder().maximumSize(cacheSize).build[java.lang.Integer, Seq[QueryResult]]()
-  val vertexCache = CacheBuilder.newBuilder().maximumSize(cacheSize).build[java.lang.Integer, Option[Vertex]]()
+//  val cache = CacheBuilder.newBuilder().maximumSize(cacheSize).build[java.lang.Integer, Seq[QueryResult]]()
+  val vertexCache = CacheBuilder.newBuilder().maximumSize(cacheSize).build[java.lang.Long, Option[Vertex]]()
 
   Model(config)
 
   // TODO: Make storage client by config param
-  val storage: Storage = new AsynchbaseStorage(config, cache, vertexCache)(ec)
+  val storage: Storage = new AsynchbaseStorage(config, vertexCache)(ec)
 
   for {
     entry <- config.entrySet() if Graph.DefaultConfigs.contains(entry.getKey)

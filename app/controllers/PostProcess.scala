@@ -194,7 +194,7 @@ object PostProcess extends JSONParser {
             LabelMeta.degree.name -> innerValToJsValue(edge.propsWithTs(LabelMeta.degreeSeq).innerVal, InnerVal.LONG)
           )
         } else {
-          val keyWithJs = edgeToJson(edge, score, queryRequest.query, queryRequest.queryParam)
+          val keyWithJs = edgeToJson(edge, score, queryRequest.query, queryRequest.queryParam, queryResult.timestamp)
           val orderByValues: (Any, Any, Any, Any) = orderByColumns.length match {
             case 0 =>
               (None, None, None, None)
@@ -288,7 +288,7 @@ object PostProcess extends JSONParser {
     } yield labelMeta.name -> jsValue
   }
 
-  private def edgeParent(parentEdges: Seq[EdgeWithScore], q: Query, queryParam: QueryParam): JsValue = {
+  private def edgeParent(parentEdges: Seq[EdgeWithScore], q: Query, queryParam: QueryParam, queryResultTs: Long): JsValue = {
     if (parentEdges.isEmpty) {
       JsNull
     } else {
@@ -296,10 +296,10 @@ object PostProcess extends JSONParser {
         parent <- parentEdges
         (parentEdge, parentScore) = EdgeWithScore.unapply(parent).get
         parentQueryParam = QueryParam(parentEdge.labelWithDir)
-        parents = edgeParent(parentEdge.parentEdges, q, parentQueryParam) if parents != JsNull
+        parents = edgeParent(parentEdge.parentEdges, q, parentQueryParam, queryResultTs) if parents != JsNull
       } yield {
           val originalEdge = parentEdge.originalEdgeOpt.getOrElse(parentEdge)
-          val edgeJson = edgeToJsonInner(originalEdge, parentScore, q, parentQueryParam) + ("parents" -> parents)
+          val edgeJson = edgeToJsonInner(originalEdge, parentScore, q, parentQueryParam, queryResultTs) + ("parents" -> parents)
           Json.toJson(edgeJson)
         }
 
@@ -308,7 +308,7 @@ object PostProcess extends JSONParser {
   }
 
   /** TODO */
-  def edgeToJsonInner(edge: Edge, score: Double, q: Query, queryParam: QueryParam): Map[String, JsValue] = {
+  def edgeToJsonInner(edge: Edge, score: Double, q: Query, queryParam: QueryParam, queryResultTs: Long): Map[String, JsValue] = {
     val (srcColumn, tgtColumn) = queryParam.label.srcTgtColumn(edge.labelWithDir.dir)
 
     val kvMapOpt = for {
@@ -322,7 +322,7 @@ object PostProcess extends JSONParser {
 
         val kvMap = targetColumns.foldLeft(Map.empty[String, JsValue]) { (map, column) =>
           val jsValue = column match {
-            case "cacheRemain" => JsNumber(queryParam.cacheTTLInMillis - (System.currentTimeMillis() - queryParam.timestamp))
+            case "cacheRemain" => JsNumber(queryParam.cacheTTLInMillis - (System.currentTimeMillis() - queryResultTs))
             case "from" => from
             case "to" => to
             case "label" => JsString(queryParam.label.label)
@@ -341,9 +341,9 @@ object PostProcess extends JSONParser {
     kvMapOpt.getOrElse(Map.empty)
   }
 
-  def edgeToJson(edge: Edge, score: Double, q: Query, queryParam: QueryParam): Map[String, JsValue] = {
-    val kvs = edgeToJsonInner(edge, score, q, queryParam)
-    if (kvs.nonEmpty && q.returnTree) kvs + ("parents" -> Json.toJson(edgeParent(edge.parentEdges, q, queryParam)))
+  def edgeToJson(edge: Edge, score: Double, q: Query, queryParam: QueryParam, queryResultTs: Long): Map[String, JsValue] = {
+    val kvs = edgeToJsonInner(edge, score, q, queryParam, queryResultTs)
+    if (kvs.nonEmpty && q.returnTree) kvs + ("parents" -> Json.toJson(edgeParent(edge.parentEdges, q, queryParam, queryResultTs)))
     else kvs
   }
 

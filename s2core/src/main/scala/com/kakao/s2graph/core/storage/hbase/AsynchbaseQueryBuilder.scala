@@ -20,6 +20,8 @@ class AsynchbaseQueryBuilder(storage: AsynchbaseStorage)(implicit ec: ExecutionC
 
   import Extensions.DeferOps
 
+
+
   override def buildRequest(queryRequest: QueryRequest): GetRequest = {
     val srcVertex = queryRequest.vertex
     //    val tgtVertexOpt = queryRequest.tgtVertexOpt
@@ -102,30 +104,28 @@ class AsynchbaseQueryBuilder(storage: AsynchbaseStorage)(implicit ec: ExecutionC
       }
     }
 
+    val (query, stepIdx, vertex, queryParam) = QueryRequest.unapply(queryRequest).get
     storage.cacheOpt match {
       case None => fetchInner
       case Some(cache) =>
-        val queryParam = queryRequest.queryParam
-        val request = buildRequest(queryRequest)
-        val cacheKey = queryParam.toCacheKey(toCacheKeyBytes(request))
-
         def setCacheAfterFetch: Deferred[QueryRequestWithResult] =
           fetchInner withCallback { queryResult: QueryRequestWithResult =>
-            cache.put(cacheKey, Seq(queryResult.queryResult))
+            cache.put(queryRequest, Seq(queryResult.queryResult))
             queryResult
           }
-        if (queryParam.cacheTTLInMillis > 0) {
+
+        if (queryParam.cacheTTLInMillis < 0) fetchInner
+        else {
           val cacheTTL = queryParam.cacheTTLInMillis
-          if (cache.asMap().containsKey(cacheKey)) {
-            val cachedVal = cache.asMap().get(cacheKey)
-            if (cachedVal != null && cachedVal.nonEmpty && queryParam.timestamp - cachedVal.head.timestamp < cacheTTL)
-              Deferred.fromResult(QueryRequestWithResult(queryRequest, cachedVal.head))
-            else
-              setCacheAfterFetch
-          } else
+          val cacheValLs = cache.getIfPresent(queryRequest)
+          logger.debug(s"[CACHE]: ${cacheValLs.nonEmpty}, ${System.currentTimeMillis()}, ${cacheValLs.headOption.map(_.timestamp)}")
+          if (cacheValLs.nonEmpty && System.currentTimeMillis() < cacheValLs.head.timestamp + cacheTTL) {
+            logger.debug(s"[Hit]")
+            Deferred.fromResult(QueryRequestWithResult(queryRequest, cacheValLs.head))
+          } else {
+            logger.debug(s"[Miss]")
             setCacheAfterFetch
-        } else {
-          fetchInner
+          }
         }
     }
   }

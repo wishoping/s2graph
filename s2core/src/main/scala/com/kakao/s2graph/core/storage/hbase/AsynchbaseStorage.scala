@@ -5,6 +5,7 @@ import java.util
 import com.google.common.cache.Cache
 import com.kakao.s2graph.core.GraphExceptions.FetchTimeoutException
 import com.kakao.s2graph.core._
+import com.kakao.s2graph.core.cache.RedisCache
 import com.kakao.s2graph.core.mysqls.{Label, LabelMeta}
 import com.kakao.s2graph.core.storage.Storage
 import com.kakao.s2graph.core.types._
@@ -44,7 +45,8 @@ object AsynchbaseStorage {
   }
 }
 
-class AsynchbaseStorage(config: Config, cache: Cache[Integer, Seq[QueryResult]], vertexCache: Cache[Integer, Option[Vertex]])
+
+class AsynchbaseStorage(config: Config, vertexCache: Cache[java.lang.Long, Option[Vertex]])
                        (implicit ec: ExecutionContext) extends Storage {
 
   import AsynchbaseStorage._
@@ -57,7 +59,7 @@ class AsynchbaseStorage(config: Config, cache: Cache[Integer, Seq[QueryResult]],
   val queryBuilder = new AsynchbaseQueryBuilder(this)(ec)
   val mutationBuilder = new AsynchbaseMutationBuilder(this)(ec)
 
-  val cacheOpt = Option(cache)
+  val cacheOpt = Option(new RedisCache(config, this))
   val vertexCacheOpt = Option(vertexCache)
 
   private val clientWithFlush = AsynchbaseStorage.makeClient(config, "hbase.rpcs.buffered_flush_interval" -> "0")

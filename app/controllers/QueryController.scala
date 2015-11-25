@@ -255,7 +255,7 @@ object QueryController extends Controller with RequestParser {
           edgeWithScore <- queryResult.edgeWithScoreLs
           (edge, score) = EdgeWithScore.unapply(edgeWithScore).get
           convertedEdge = if (isReverted) edge.duplicateEdge else edge
-          edgeJson = PostProcess.edgeToJson(convertedEdge, score, queryRequest.query, queryRequest.queryParam)
+          edgeJson = PostProcess.edgeToJson(convertedEdge, score, queryRequest.query, queryRequest.queryParam, queryResult.timestamp)
         } yield Json.toJson(edgeJson)
 
         val json = Json.toJson(edgeJsons)

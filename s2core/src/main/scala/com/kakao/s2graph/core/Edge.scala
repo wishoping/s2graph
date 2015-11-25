@@ -215,14 +215,17 @@ case class Edge(srcVertex: Vertex,
   }
 
   override def hashCode(): Int = {
-    MurmurHash3.stringHash(srcVertex.innerId + "," + labelWithDir + "," + tgtVertex.innerId)
+    MurmurHash3.stringHash(srcVertex.innerId + "," +
+      labelWithDir + "," + tgtVertex.innerId + "," + op + "," + propsWithTs)
   }
 
   override def equals(other: Any): Boolean = other match {
     case e: Edge =>
       srcVertex.innerId == e.srcVertex.innerId &&
         tgtVertex.innerId == e.tgtVertex.innerId &&
-        labelWithDir == e.labelWithDir
+        labelWithDir == e.labelWithDir &&
+        op == e.op &&
+        propsWithTs == e.propsWithTs
     case _ => false
   }
 
