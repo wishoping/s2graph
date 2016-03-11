@@ -124,6 +124,39 @@ class RankingStorageGraph(config: Config) extends RankingStorage {
     Await.result(Future.sequence(futures), 10 seconds)
   }
 
+  def update2(values: Seq[(RankingKey, RankingValueMap)], k: Int): Unit = {
+    for {
+      (key, value) <- values if checkAndPrepareDimensionBucket(key)
+    } yield {
+      // prepare dimension bucket edge
+      val future = getEdges(key, "raw").flatMap { edges =>
+        val prevRankingSeq = toWithScoreLs(edges)
+        val prevRankingMap: Map[String, Double] = prevRankingSeq.groupBy(_._1).map(_._2.sortBy(-_._2).head)
+        val currentRankingMap: Map[String, Double] = value.mapValues(_.score)
+        val mergedRankingSeq = (prevRankingMap ++ currentRankingMap).toSeq.sortBy(-_._2).take(k)
+        val mergedRankingMap = mergedRankingSeq.toMap
+
+        val bucketRankingSeq = mergedRankingSeq.groupBy { case (itemId, score) =>
+          // 0-index
+          GraphUtil.transformHash(MurmurHash3.stringHash(itemId)) % BUCKET_SHARD_COUNT
+        }.map { case (shardIdx, groupedRanking) =>
+          shardIdx -> groupedRanking.filter { case (itemId, _) => currentRankingMap.contains(itemId) }
+        }.toSeq
+
+        insertBulk(key, bucketRankingSeq).flatMap { _ =>
+          val duplicatedItems = prevRankingMap.filterKeys(s => currentRankingMap.contains(s))
+          val cutoffItems = prevRankingMap.filterKeys(s => !mergedRankingMap.contains(s))
+          val deleteItems = duplicatedItems ++ cutoffItems
+
+          val keyWithEdgesLs = prevRankingSeq.map(_._1).zip(edges)
+          val deleteEdges = keyWithEdgesLs.filter{ case (s, _) => deleteItems.contains(s) }.map(_._2)
+
+          deleteAll(deleteEdges)
+        }
+      }
+    }
+  }
+
   private def toWithScoreLs(edges: List[JsValue]): List[(String, Double)] = {
     for {
       edgeJson <- edges
@@ -135,6 +168,32 @@ class RankingStorageGraph(config: Config) extends RankingStorage {
         case _ => to.toString()
       }
       toValue -> score
+    }
+  }
+
+  private def buildInsertBulk(key: RankingKey, newRankingSeq: Seq[(Int, Seq[(String, Double)])]): String = {
+    val labelName = counterModel.findById(key.policyId).get.action + labelPostfix
+    val timestamp: Long = System.currentTimeMillis
+    val keyProps = Json.toJson(key.eq.dimKeyValues).as[JsObject] ++ Json.obj(
+      "time_unit" -> key.eq.tq.q.toString,
+      "time_value" -> key.eq.tq.ts,
+      "date_time" -> key.eq.tq.dateTime,
+      "dimension" -> key.eq.dimension
+    )
+    Json.toJson {
+      for {
+        (shardIdx, rankingSeq) <- newRankingSeq
+        (itemId, score) <- rankingSeq
+      } yield {
+        val srcId = makeBucketShardKey(shardIdx, key)
+        Json.obj(
+          "timestamp" -> timestamp,
+          "from" -> srcId,
+          "to" -> itemId,
+          "label" -> labelName,
+          "props" -> keyProps.+(("score", Json.toJson(score)))
+        )
+      }
     }
   }
 
