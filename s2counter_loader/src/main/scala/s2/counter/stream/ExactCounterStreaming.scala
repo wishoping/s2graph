@@ -23,7 +23,7 @@ object ExactCounterStreaming extends SparkApp with WithKafka {
 
   val inputTopics = Set(StreamingConfig.KAFKA_TOPIC_COUNTER)
   val strInputTopics = inputTopics.mkString(",")
-  val groupId = buildKafkaGroupId(strInputTopics, "counter_v2")
+  val groupId = buildKafkaGroupId(strInputTopics, "counter_v2_20160311")
   val kafkaParam = Map(
     "group.id" -> groupId,
     "metadata.broker.list" -> StreamingConfig.KAFKA_BROKERS,

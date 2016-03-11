@@ -2,7 +2,6 @@ package s2.counter.stream
 
 import kafka.serializer.StringDecoder
 import org.apache.spark.streaming.Durations._
-import org.apache.spark.streaming.kafka.KafkaRDDFunctions.rddToKafkaRDDFunctions
 import org.apache.spark.streaming.kafka.{HasOffsetRanges, StreamHelper}
 import s2.config.{S2ConfigFactory, S2CounterConfig, StreamingConfig}
 import s2.counter.core.CounterFunctions
@@ -22,7 +21,7 @@ object RankingCounterStreaming extends SparkApp with WithKafka {
 
   val inputTopics = Set(StreamingConfig.KAFKA_TOPIC_COUNTER_TRX)
   val strInputTopics = inputTopics.mkString(",")
-  val groupId = buildKafkaGroupId(strInputTopics, "ranking_v2")
+  val groupId = buildKafkaGroupId(strInputTopics, "ranking_v2_20160311")
   val kafkaParam = Map(
 //    "auto.offset.reset" -> "smallest",
     "group.id" -> groupId,
